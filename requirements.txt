@@ -18,6 +18,9 @@ sentence-transformers
 # Vector store
 chromadb
 
+# Ollama client
+requests
+
 # Dev / test
 pytest==8.2.0
 pytest-asyncio==0.23.6

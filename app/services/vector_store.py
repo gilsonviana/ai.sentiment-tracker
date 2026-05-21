@@ -43,3 +43,38 @@ def semantic_search(
         kwargs["where"] = mood_filter
     results = _collection.query(**kwargs)
     return results["ids"][0] if results["ids"] else []
+
+
+def get_similar_past_entries(
+    query_embedding: list[float],
+    before_iso: str,
+    n_results: int = 3,
+) -> list[dict]:
+    """
+    Finds entries older than `before_iso` that are semantically similar to
+    `query_embedding`. Used to surface historical patterns for the reflection
+    prompt. Returns empty list if no past entries exist or Chroma errors.
+    """
+    try:
+        results = _collection.query(
+            query_embeddings=[query_embedding],
+            n_results=n_results,
+            where={"created_at": {"$lt": before_iso}},
+            include=["metadatas", "distances"],
+        )
+    except Exception:
+        return []
+
+    ids = results.get("ids", [[]])[0]
+    if not ids:
+        return []
+
+    return [
+        {
+            "entry_id": entry_id,
+            "mood_score": meta["mood_score"],
+            "entities": [e for e in meta["entities"].split(",") if e],
+            "created_at": meta["created_at"][:10],
+        }
+        for entry_id, meta in zip(ids, results["metadatas"][0])
+    ]

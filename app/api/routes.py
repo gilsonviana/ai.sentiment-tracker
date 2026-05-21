@@ -4,11 +4,14 @@ import aiosqlite
 
 from app.models.entry import JournalEntryCreate, JournalEntryResponse
 from app.models.analysis import AnalysisResponse
+from app.models.reflection import ReflectionResponse
 from app.db.sqlite import save_entry, get_entry, get_analysis
 from app.core.pipeline import run_analysis_pipeline
+from app.services.reflection import generate_weekly_reflection
 from app.api.deps import get_db
 
 router = APIRouter(prefix="/entries", tags=["entries"])
+reflect_router = APIRouter(prefix="/reflect", tags=["reflection"])
 
 @router.get("", response_model=list[JournalEntryResponse], status_code=200)
 async def list_entries(
@@ -65,3 +68,11 @@ async def get_entry_status(
     if entry is None:
         raise HTTPException(status_code=404, detail="Entry not found")
     return entry
+
+
+@reflect_router.post("", response_model=ReflectionResponse, status_code=200)
+async def reflect(
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    result = await generate_weekly_reflection(db)
+    return result

@@ -1,6 +1,6 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
-from app.api.routes import router
+from app.api.routes import router, reflect_router
 from app.db.migrations import run_migrations
 from app.config import settings
 
@@ -22,6 +22,7 @@ app = FastAPI(
 )
 
 app.include_router(router)
+app.include_router(reflect_router)
 
 
 @app.get("/health")

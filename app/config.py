@@ -20,6 +20,9 @@ class Settings(BaseSettings):
     max_entry_length: int = 5000
     chunk_size: int = 512
 
+    # Ollama
+    ollama_url: str = "http://localhost:11434"
+
     class Config:
         env_file = ".env"
 
