@@ -1,22 +1,56 @@
-.PHONY: install setup run test lint venv
+.PHONY: install setup run test lint check-python freeze
 
-VENV     := .venv
-PYTHON   := $(VENV)/bin/python
-PIP      := $(VENV)/bin/pip
-UVICORN  := $(VENV)/bin/uvicorn
-PYTEST   := $(VENV)/bin/pytest
+VENV        := .venv
+PYTHON      := $(VENV)/bin/python
+PIP         := $(VENV)/bin/pip
+UVICORN     := $(VENV)/bin/uvicorn
+PYTEST      := $(VENV)/bin/pytest
+REQUIRED_PY := 3.12
 
-venv:
+# ── Python version guard ──────────────────────────────────────────────────────
+check-python:
+	@ACTUAL=$$(python3 --version 2>&1 | cut -d' ' -f2 | cut -d'.' -f1,2); \
+	if [ "$$ACTUAL" != "$(REQUIRED_PY)" ]; then \
+		echo ""; \
+		echo "❌  Wrong Python version: $$ACTUAL"; \
+		echo "   This project requires Python $(REQUIRED_PY).x"; \
+		echo "   Install it from https://www.python.org/downloads/"; \
+		echo "   Then re-run: make setup"; \
+		echo ""; \
+		exit 1; \
+	else \
+		echo "✅  Python $$ACTUAL — OK"; \
+	fi
+
+# ── Environment setup ─────────────────────────────────────────────────────────
+venv: check-python
 	python3 -m venv $(VENV)
 	$(PIP) install --upgrade pip
 
 setup: venv
 	cp -n .env.example .env || true
 	mkdir -p data
+	@echo ""
+	@echo "✅  Setup complete. Run 'make install' next."
 
+# ── Dependency install ────────────────────────────────────────────────────────
 install: venv
-	$(PIP) install -r requirements.txt
+	@if [ -f requirements.lock ]; then \
+		echo "📦  Installing from lockfile (requirements.lock)..."; \
+		$(PIP) install -r requirements.lock; \
+	else \
+		echo "📦  No lockfile found. Installing from requirements.txt..."; \
+		$(PIP) install -r requirements.txt; \
+		echo ""; \
+		echo "💡  Run 'make freeze' to generate a lockfile for reproducible installs."; \
+	fi
 
+# ── Freeze lockfile ───────────────────────────────────────────────────────────
+freeze:
+	$(PIP) freeze > requirements.lock
+	@echo "✅  requirements.lock generated. Commit this file to git."
+
+# ── Dev commands ──────────────────────────────────────────────────────────────
 run:
 	$(UVICORN) app.main:app --reload --port 8000
 

@@ -1,0 +1,14 @@
+[project]
+name = "ai-journal"
+version = "0.1.0"
+description = "Sentiment-aware personal journal with local ML pipeline"
+requires-python = ">=3.12,<3.13"
+dependencies = []
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
