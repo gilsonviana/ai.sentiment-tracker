@@ -29,7 +29,7 @@ https://www.python.org/downloads/ and re-run setup.
 ```bash
 # 1. Clone the repo
 git clone <your-repo-url>
-cd ai-journal
+cd ai.sentiment-tracker
 
 # 2. Setup environment (checks Python version, creates .venv, copies .env)
 make setup
@@ -39,7 +39,7 @@ make setup
 #    - Falls back to requirements.txt if not (resolves from scratch)
 make install
 
-# 4. Add your HuggingFace token to .env (free at huggingface.co/settings/tokens)
+# 4. Add your HuggingFace token to .env (free at huggingface.co/settings/tokens) (optional)
 echo 'HF_TOKEN=hf_your_token_here' >> .env
 
 # 5. Run the server

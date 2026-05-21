@@ -22,5 +22,6 @@ class JournalEntryDB(BaseModel):
 class JournalEntryResponse(BaseModel):
     """What the API returns after a POST."""
     id: str
+    content: str
     status: str
     created_at: datetime

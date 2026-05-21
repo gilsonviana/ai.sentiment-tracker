@@ -8,6 +8,17 @@ from app.api.deps import get_db
 
 router = APIRouter(prefix="/entries", tags=["entries"])
 
+@router.get("", response_model=list[JournalEntryResponse], status_code=200)
+async def list_entries(
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    async with db.execute(
+        "SELECT * FROM entries ORDER BY created_at DESC"
+    ) as cursor:
+        rows = await cursor.fetchall()
+        return [JournalEntryResponse(**dict(row)) for row in rows]
+
+
 
 @router.post("", response_model=JournalEntryResponse, status_code=202)
 async def create_entry(
