@@ -1,7 +1,8 @@
-from pydantic import BaseModel, Field, field_validator
+import re
 from datetime import datetime
-from typing import Optional
-import uuid
+
+from pydantic import BaseModel, Field, field_validator
+
 
 class JournalEntryCreate(BaseModel):
     """Payload the client sends to POST /entries."""
@@ -9,8 +10,11 @@ class JournalEntryCreate(BaseModel):
 
     @field_validator("content")
     @classmethod
-    def strip_content(cls, v: str) -> str:
-        return v.strip()
+    def strip_and_check_content(cls, v: str) -> str:
+        v = v.strip()
+        if not re.search(r"[a-zA-Z]", v):
+            raise ValueError("Entry must contain at least one word")
+        return v
 
 class JournalEntryDB(BaseModel):
     """Row shape returned from SQLite."""
