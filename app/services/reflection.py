@@ -10,22 +10,26 @@ import aiosqlite
 from fastapi import HTTPException
 
 from app.config import settings
+from app.db.sqlite import save_reflection
 from app.services.embeddings import embed_text
 from app.services.vector_store import get_similar_past_entries
 
 
-async def fetch_week_context(db: aiosqlite.Connection) -> list[dict]:
-    """Returns entries + analysis joined for the past 7 days."""
-    since = (datetime.utcnow() - timedelta(days=7)).isoformat()
+async def fetch_window_context(
+    db: aiosqlite.Connection,
+    window_start: str,
+    window_end: str,
+) -> list[dict]:
+    """Returns entries + analysis joined for the given date window."""
     async with db.execute(
         """
         SELECT e.content, e.entry_date, a.composite_score, a.label, a.entities
         FROM entries e
         JOIN analysis a ON a.entry_id = e.id
-        WHERE e.created_at >= ? AND e.status = 'processed'
-        ORDER BY e.entry_date ASC, e.created_at ASC
+        WHERE e.entry_date >= ? AND e.entry_date <= ? AND e.status = 'processed'
+        ORDER BY e.entry_date ASC
         """,
-        (since,),
+        (window_start, window_end),
     ) as cursor:
         rows = await cursor.fetchall()
 
@@ -37,8 +41,12 @@ async def fetch_week_context(db: aiosqlite.Connection) -> list[dict]:
     return result
 
 
-def build_prompt(entries: list[dict], similar_past: list[dict]) -> str:
-    """Assembles the RAG prompt from the week's entries and optional historical context."""
+def build_prompt(
+    entries: list[dict],
+    similar_past: list[dict],
+    window_start: str = "",
+    window_end: str = "",
+) -> str:
     lines = []
     for e in entries:
         score = e["composite_score"]
@@ -58,19 +66,25 @@ def build_prompt(entries: list[dict], similar_past: list[dict]) -> str:
         ]
         history_block = (
             "\n\nFor additional context, here are past entries that were "
-            "emotionally similar to this week:\n" + "\n".join(hist_lines) +
+            "emotionally similar to this period:\n" + "\n".join(hist_lines) +
             "\nReference these only if they add meaningful insight — "
             "do not force a comparison."
         )
 
-    return f"""You are a warm, empathetic journaling coach writing a weekly reflection for your user.
+    window_desc = (
+        f"from {window_start} to {window_end}"
+        if window_start and window_end
+        else "from the past 7 days"
+    )
 
-Here are their journal entries from the past 7 days:
+    return f"""You are a warm, empathetic journaling coach writing a reflection for your user.
+
+Here are their journal entries {window_desc}:
 
 {context}{history_block}
 
-Write a personal weekly reflection in 3–4 paragraphs. Use second person ("you felt", "your week").
-Synthesise the entries — do not list them verbatim. Identify the emotional arc across the week.
+Write a personal reflection in 3–4 paragraphs. Use second person ("you felt", "your week").
+Synthesise the entries — do not list them verbatim. Identify the emotional arc across the period.
 Note any recurring themes or entities. End with one forward-looking observation or gentle encouragement.
 Keep the tone warm, honest, and grounded."""
 
@@ -103,7 +117,7 @@ def _call_ollama_sync(prompt: str) -> str:
 
 async def call_ollama(prompt: str) -> str:
     """Calls Ollama in a thread pool to avoid blocking the event loop."""
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     try:
         return await loop.run_in_executor(None, partial(_call_ollama_sync, prompt))
     except RuntimeError as e:
@@ -115,34 +129,55 @@ async def call_ollama(prompt: str) -> str:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-async def generate_weekly_reflection(db: aiosqlite.Connection) -> dict:
-    """Orchestrates context retrieval, prompt assembly, and Ollama call."""
-    entries = await fetch_week_context(db)
+async def generate_weekly_reflection(
+    db: aiosqlite.Connection,
+    start: str | None = None,
+    end: str | None = None,
+) -> dict:
+    """Orchestrates context retrieval, prompt assembly, Ollama call, and persistence."""
+    today = datetime.utcnow().date()
+    window_end = end or today.isoformat()
+    window_start = start or (today - timedelta(days=7)).isoformat()
+
+    entries = await fetch_window_context(db, window_start, window_end)
 
     if len(entries) < 3:
+        found = len(entries)
+        missing = 3 - found
+        entry_word = "entry" if found == 1 else "entries"
+        more_word = "entry" if missing == 1 else "entries"
+        narrative = (
+            f"Only {found} processed {entry_word} found between {window_start} and "
+            f"{window_end}. At least 3 are needed to generate a meaningful reflection — "
+            f"add {missing} more {more_word} in this window and try again."
+        )
         return {
-            "narrative": "Not enough entries this week to generate a reflection. Keep writing!",
+            "narrative": narrative,
             "entry_count": len(entries),
             "avg_mood": 0.0,
+            "window_start": window_start,
+            "window_end": window_end,
         }
 
-    # Use the most emotionally significant entry as the Chroma query anchor
     anchor = max(entries, key=lambda e: abs(e["composite_score"]))
-    since_iso = (datetime.utcnow() - timedelta(days=7)).isoformat()
 
     anchor_embedding = await embed_text(anchor["content"])
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     similar_past = await loop.run_in_executor(
         None,
-        lambda: get_similar_past_entries(anchor_embedding, before_iso=since_iso),
+        lambda: get_similar_past_entries(anchor_embedding, before_iso=window_start),
     )
 
-    prompt = build_prompt(entries, similar_past)
+    prompt = build_prompt(entries, similar_past, window_start, window_end)
     narrative = await call_ollama(prompt)
     avg_mood = round(mean(e["composite_score"] for e in entries), 2)
+
+    await save_reflection(db, narrative, len(entries), avg_mood, window_start, window_end)
 
     return {
         "narrative": narrative,
         "entry_count": len(entries),
         "avg_mood": avg_mood,
+        "window_start": window_start,
+        "window_end": window_end,
     }

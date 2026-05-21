@@ -53,3 +53,64 @@ async def get_analysis(db: aiosqlite.Connection, entry_id: str) -> AnalysisRespo
         data = dict(row)
         data["entities"] = json.loads(data["entities"] or "[]")
         return AnalysisResponse(**data)
+
+
+async def save_reflection(
+    db: aiosqlite.Connection,
+    narrative: str,
+    entry_count: int,
+    avg_mood: float,
+    window_start: str,
+    window_end: str,
+) -> str:
+    ref_id = str(uuid.uuid4())
+    await db.execute(
+        """INSERT INTO reflections
+           (id, narrative, entry_count, avg_mood, window_start, window_end, generated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        (ref_id, narrative, entry_count, avg_mood, window_start, window_end,
+         datetime.utcnow().isoformat()),
+    )
+    await db.commit()
+    return ref_id
+
+
+async def list_reflections(db: aiosqlite.Connection) -> list[dict]:
+    async with db.execute(
+        "SELECT * FROM reflections ORDER BY generated_at DESC"
+    ) as cursor:
+        rows = await cursor.fetchall()
+    return [dict(row) for row in rows]
+
+
+async def get_entries_by_ids(db: aiosqlite.Connection, ids: list[str]) -> list[dict]:
+    if not ids:
+        return []
+    placeholders = ",".join("?" * len(ids))
+    async with db.execute(
+        f"""SELECT e.id, e.content, e.entry_date, a.composite_score, a.label, a.entities
+            FROM entries e
+            JOIN analysis a ON a.entry_id = e.id
+            WHERE e.id IN ({placeholders})""",
+        ids,
+    ) as cursor:
+        rows = await cursor.fetchall()
+    result = []
+    for row in rows:
+        data = dict(row)
+        data["entities"] = json.loads(data["entities"] or "[]")
+        result.append(data)
+    return result
+
+
+async def get_mood_data(db: aiosqlite.Connection, month: str) -> list[dict]:
+    async with db.execute(
+        """SELECT e.entry_date, a.composite_score, a.label
+           FROM entries e
+           JOIN analysis a ON a.entry_id = e.id
+           WHERE e.entry_date LIKE ? AND e.status = 'processed'
+           ORDER BY e.entry_date ASC""",
+        (f"{month}-%",),
+    ) as cursor:
+        rows = await cursor.fetchall()
+    return [dict(row) for row in rows]

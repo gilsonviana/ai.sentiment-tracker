@@ -3,6 +3,7 @@ import re
 import time
 
 import httpx
+import pandas as pd
 import streamlit as st
 
 API_BASE = "http://localhost:8000"
@@ -48,6 +49,39 @@ def fetch_all_entries(month: str | None = None) -> list[dict]:
         return r.json()
 
 
+def generate_reflection(start: str | None = None, end: str | None = None) -> dict:
+    params = {}
+    if start:
+        params["start"] = start
+    if end:
+        params["end"] = end
+    with httpx.Client(base_url=API_BASE, timeout=180.0) as client:
+        r = client.post("/reflect", params=params)
+        r.raise_for_status()
+        return r.json()
+
+
+def fetch_reflections() -> list[dict]:
+    with httpx.Client(base_url=API_BASE, timeout=10.0) as client:
+        r = client.get("/reflect")
+        r.raise_for_status()
+        return r.json()
+
+
+def ask_question(question: str) -> dict:
+    with httpx.Client(base_url=API_BASE, timeout=180.0) as client:
+        r = client.post("/chat", json={"question": question})
+        r.raise_for_status()
+        return r.json()
+
+
+def fetch_mood_data(month: str) -> dict:
+    with httpx.Client(base_url=API_BASE, timeout=10.0) as client:
+        r = client.get(f"/mood/{month}")
+        r.raise_for_status()
+        return r.json()
+
+
 def check_health() -> dict:
     with httpx.Client(base_url=API_BASE, timeout=5.0) as client:
         r = client.get("/health")
@@ -55,7 +89,7 @@ def check_health() -> dict:
         return r.json()
 
 
-# ── Reusable display component ────────────────────────────────────────────────
+# ── Reusable display components ───────────────────────────────────────────────
 
 def render_analysis(analysis: dict) -> None:
     label = analysis["label"]
@@ -83,6 +117,16 @@ def render_analysis(analysis: dict) -> None:
         st.caption(f"Analysed at: {analysis['analysed_at'][:19].replace('T', ' ')} UTC")
 
 
+def render_mood_badge(avg_mood: float) -> None:
+    if avg_mood >= 0.2:
+        color, label = "green", "Positive"
+    elif avg_mood <= -0.2:
+        color, label = "red", "Negative"
+    else:
+        color, label = "orange", "Neutral"
+    st.markdown(f"**Avg mood:** :{color}[{label}] `{avg_mood:+.2f}`")
+
+
 # ── App layout ────────────────────────────────────────────────────────────────
 
 st.set_page_config(page_title="AI Sentiment Tracker", layout="wide")
@@ -93,11 +137,18 @@ for key, default in [
     ("submitted_entry_id", None),
     ("analysis_result", None),
     ("poll_error", None),
+    ("reflection_result", None),
+    ("reflection_error", None),
+    ("chat_answer", None),
+    ("chat_sources", 0),
+    ("chat_error", None),
 ]:
     if key not in st.session_state:
         st.session_state[key] = default
 
-tab_write, tab_browse, tab_health = st.tabs(["Write Entry", "Browse Entries", "API Health"])
+tab_write, tab_browse, tab_reflect, tab_chat, tab_insights, tab_health = st.tabs(
+    ["Write Entry", "Browse Entries", "Reflection", "Chat", "Insights", "API Health"]
+)
 
 
 # ── Tab 1: Write Entry ────────────────────────────────────────────────────────
@@ -167,7 +218,7 @@ with tab_browse:
     with col_search:
         search_term = st.text_input("Search content", placeholder="Filter by keyword...")
     with col_refresh:
-        st.markdown("&nbsp;", unsafe_allow_html=True)  # vertical alignment spacer
+        st.markdown("&nbsp;", unsafe_allow_html=True)
         refresh = st.button("Refresh", key="refresh_browse")
 
     try:
@@ -215,7 +266,163 @@ with tab_browse:
                     st.error("Analysis failed for this entry.")
 
 
-# ── Tab 3: API Health ─────────────────────────────────────────────────────────
+# ── Tab 3: Reflection ─────────────────────────────────────────────────────────
+
+with tab_reflect:
+    st.subheader("Generate Reflection")
+    st.caption(
+        "Leave the date range blank to use the last 7 days, or specify a custom window."
+    )
+
+    col_start, col_end = st.columns(2)
+    with col_start:
+        reflect_start = st.date_input(
+            "From (optional)", value=None, key="reflect_start"
+        )
+    with col_end:
+        reflect_end = st.date_input(
+            "To (optional)", value=None, key="reflect_end"
+        )
+
+    if st.button("Generate Reflection", type="primary"):
+        st.session_state.reflection_result = None
+        st.session_state.reflection_error = None
+        with st.spinner("Generating reflection with Ollama… this may take a minute."):
+            try:
+                result = generate_reflection(
+                    start=reflect_start.isoformat() if reflect_start else None,
+                    end=reflect_end.isoformat() if reflect_end else None,
+                )
+                st.session_state.reflection_result = result
+            except httpx.HTTPStatusError as e:
+                try:
+                    detail = e.response.json().get("detail", str(e))
+                except Exception:
+                    detail = str(e)
+                st.session_state.reflection_error = detail
+            except Exception as e:
+                st.session_state.reflection_error = str(e)
+
+    if st.session_state.reflection_error:
+        st.error(st.session_state.reflection_error)
+    elif st.session_state.reflection_result:
+        r = st.session_state.reflection_result
+        col_l, col_r = st.columns([3, 1])
+        with col_r:
+            render_mood_badge(r["avg_mood"])
+            st.caption(f"{r['entry_count']} entries · {r['window_start']} → {r['window_end']}")
+        with col_l:
+            st.markdown(r["narrative"])
+
+    st.divider()
+    st.subheader("Past Reflections")
+
+    if st.button("Load History", key="load_reflections"):
+        try:
+            past = fetch_reflections()
+            if not past:
+                st.info("No reflections saved yet.")
+            else:
+                for ref in past:
+                    ts = ref["generated_at"][:10]
+                    header = f"{ts} · {ref['window_start']} → {ref['window_end']} · {ref['entry_count']} entries"
+                    with st.expander(header):
+                        render_mood_badge(ref["avg_mood"])
+                        st.markdown(ref["narrative"])
+        except Exception as e:
+            st.error(f"Could not load reflections: {e}")
+
+
+# ── Tab 4: Chat ───────────────────────────────────────────────────────────────
+
+with tab_chat:
+    st.subheader("Ask Your Journal")
+    st.caption(
+        'Ask questions about your entries — e.g. "How did I feel about work this month?"'
+    )
+
+    question = st.text_input(
+        "Your question",
+        placeholder="How have I been feeling lately?",
+        key="chat_question",
+        max_chars=1000,
+    )
+
+    ask_disabled = not question.strip()
+
+    if st.button("Ask", type="primary", disabled=ask_disabled):
+        st.session_state.chat_answer = None
+        st.session_state.chat_error = None
+        st.session_state.chat_sources = 0
+        with st.spinner("Thinking…"):
+            try:
+                result = ask_question(question.strip())
+                st.session_state.chat_answer = result["answer"]
+                st.session_state.chat_sources = result["sources_used"]
+            except httpx.HTTPStatusError as e:
+                try:
+                    detail = e.response.json().get("detail", str(e))
+                except Exception:
+                    detail = str(e)
+                st.session_state.chat_error = detail
+            except Exception as e:
+                st.session_state.chat_error = str(e)
+
+    if st.session_state.chat_error:
+        st.error(st.session_state.chat_error)
+    elif st.session_state.chat_answer:
+        st.markdown(st.session_state.chat_answer)
+        st.caption(f"Based on {st.session_state.chat_sources} journal entr{'y' if st.session_state.chat_sources == 1 else 'ies'}.")
+
+
+# ── Tab 5: Insights ───────────────────────────────────────────────────────────
+
+with tab_insights:
+    st.subheader("Mood Chart")
+
+    default_month = datetime.date.today().strftime("%Y-%m")
+    insight_month = st.text_input(
+        "Month", value=default_month, placeholder="YYYY-MM", key="insight_month"
+    )
+
+    if st.button("Load Chart", type="primary"):
+        if not re.match(r"^\d{4}-\d{2}$", insight_month.strip()):
+            st.error("Invalid format. Use YYYY-MM (e.g. 2026-05).")
+        else:
+            try:
+                mood_data = fetch_mood_data(insight_month.strip())
+
+                st.markdown(f"**{mood_data['entry_count']} entries**")
+                render_mood_badge(mood_data["avg_mood"])
+                st.divider()
+
+                df = pd.DataFrame(mood_data["entries"])
+                df["date"] = pd.to_datetime(df["date"])
+                df = df.set_index("date").sort_index()
+
+                st.line_chart(df["score"], use_container_width=True)
+                st.caption("Composite mood score (−1 = very negative, +1 = very positive)")
+
+                st.divider()
+                st.markdown("**Entry breakdown:**")
+                for _, row in df.reset_index().iterrows():
+                    color = {"positive": "green", "neutral": "orange", "negative": "red"}.get(
+                        row["label"], "gray"
+                    )
+                    st.markdown(
+                        f"`{str(row['date'])[:10]}` — :{color}[{row['label'].upper()}] "
+                        f"`{row['score']:+.3f}`"
+                    )
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code == 404:
+                    st.info(f"No processed entries found for {insight_month.strip()}.")
+                else:
+                    st.error(f"API error: {e}")
+            except Exception as e:
+                st.error(f"Could not load mood data: {e}")
+
+
+# ── Tab 6: API Health ─────────────────────────────────────────────────────────
 
 with tab_health:
     st.subheader("API Health")
@@ -239,5 +446,9 @@ with tab_health:
 | `GET` | `/entries` | List all entries |
 | `GET` | `/entries/{id}` | Poll processing status |
 | `GET` | `/entries/{id}/analysis` | Fetch sentiment scores and entities |
+| `POST` | `/reflect` | Generate reflection (optional `?start=&end=`) |
+| `GET` | `/reflect` | List past reflections |
+| `POST` | `/chat` | Ask a question about your journal (RAG) |
+| `GET` | `/mood/{month}` | Monthly mood report for charting |
 """
     )

@@ -63,7 +63,7 @@ app/
   config.py         # Pydantic settings, reads from .env
   api/
     routes.py       # POST /entries, GET /entries, GET /entries/{id},
-                    # GET /entries/{id}/analysis, GET /health
+                    # GET /entries/{id}/analysis, GET /health, POST /reflect
     deps.py         # DB connection dependency injection
   core/
     pipeline.py     # run_analysis_pipeline — async fan-out orchestration
@@ -74,11 +74,13 @@ app/
   models/
     entry.py        # JournalEntryCreate, JournalEntryDB, JournalEntryResponse
     analysis.py     # SentimentResult, AnalysisResult, AnalysisResponse
+    reflection.py   # ReflectionResponse
   services/
     sentiment.py    # VADER + RoBERTa composite scoring
     embeddings.py   # SentenceTransformer singleton
     ner.py          # BERT-NER with confidence threshold > 0.85
     vector_store.py # Chroma client (upsert + similarity search)
+    reflection.py   # Weekly reflection: SQLite context fetch, prompt assembly, Ollama call
 tests/
   conftest.py       # AsyncClient fixture via ASGITransport
   unit/
@@ -123,6 +125,7 @@ CHROMA_PATH=./data/chroma
 EMBEDDING_MODEL=all-MiniLM-L6-v2
 NER_MODEL=dslim/bert-base-NER
 ROBERTA_MODEL=cardiffnlp/twitter-roberta-base-sentiment-latest
+OLLAMA_URL=http://localhost:11434
 HF_TOKEN=<your-huggingface-token>
 ```
 
@@ -138,3 +141,10 @@ HF_TOKEN=<your-huggingface-token>
 Tests use `asyncio_mode = "auto"` — no need for `@pytest.mark.asyncio` decorator. The async `client` fixture in `conftest.py` uses `httpx.AsyncClient` + `ASGITransport` for integration tests.
 
 Integration tests directory exists but is empty — unit tests cover preprocessing logic only.
+
+
+## V3 Roadmap
+- **React frontend** — production UI replacing Streamlit.
+
+### Internationalisation
+- **PT-BR support** — swap models: `pysentimiento` for sentiment, `paraphrase-multilingual-MiniLM-L12-v2` for embeddings, a Portuguese BERT for NER.

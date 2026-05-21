@@ -1,17 +1,30 @@
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from statistics import mean
 from typing import Optional
-import aiosqlite
 
-from app.models.entry import JournalEntryCreate, JournalEntryResponse
-from app.models.analysis import AnalysisResponse
-from app.models.reflection import ReflectionResponse
-from app.db.sqlite import save_entry, get_entry, get_analysis
-from app.core.pipeline import run_analysis_pipeline
-from app.services.reflection import generate_weekly_reflection
+import aiosqlite
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+
 from app.api.deps import get_db
+from app.core.pipeline import run_analysis_pipeline
+from app.db.sqlite import (
+    get_analysis,
+    get_entry,
+    get_mood_data,
+    list_reflections,
+    save_entry,
+)
+from app.models.analysis import AnalysisResponse
+from app.models.chat import ChatRequest, ChatResponse
+from app.models.entry import JournalEntryCreate, JournalEntryResponse
+from app.models.mood_report import MoodDataPoint, MoodReport
+from app.models.reflection import ReflectionResponse, StoredReflection
+from app.services.reflection import generate_weekly_reflection
 
 router = APIRouter(prefix="/entries", tags=["entries"])
 reflect_router = APIRouter(prefix="/reflect", tags=["reflection"])
+chat_router = APIRouter(prefix="/chat", tags=["chat"])
+mood_router = APIRouter(prefix="/mood", tags=["mood"])
+
 
 @router.get("", response_model=list[JournalEntryResponse], status_code=200)
 async def list_entries(
@@ -30,7 +43,6 @@ async def list_entries(
         ) as cursor:
             rows = await cursor.fetchall()
     return [JournalEntryResponse(**dict(row)) for row in rows]
-
 
 
 @router.post("", response_model=JournalEntryResponse, status_code=202)
@@ -70,9 +82,44 @@ async def get_entry_status(
     return entry
 
 
+@reflect_router.get("", response_model=list[StoredReflection], status_code=200)
+async def get_reflections(db: aiosqlite.Connection = Depends(get_db)):
+    return await list_reflections(db)
+
+
 @reflect_router.post("", response_model=ReflectionResponse, status_code=200)
 async def reflect(
+    start: Optional[str] = Query(None, description="Window start date YYYY-MM-DD"),
+    end: Optional[str] = Query(None, description="Window end date YYYY-MM-DD"),
     db: aiosqlite.Connection = Depends(get_db),
 ):
-    result = await generate_weekly_reflection(db)
+    result = await generate_weekly_reflection(db, start=start, end=end)
     return result
+
+
+@chat_router.post("", response_model=ChatResponse, status_code=200)
+async def chat(
+    payload: ChatRequest,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    from app.services.chat import answer_question
+    result = await answer_question(db, payload.question)
+    return result
+
+
+@mood_router.get("/{month}", response_model=MoodReport, status_code=200)
+async def get_mood_report(
+    month: str,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    data = await get_mood_data(db, month)
+    if not data:
+        raise HTTPException(
+            status_code=404, detail=f"No processed entries found for {month}"
+        )
+    points = [
+        MoodDataPoint(date=r["entry_date"], score=r["composite_score"], label=r["label"])
+        for r in data
+    ]
+    avg = round(mean(p.score for p in points), 2)
+    return MoodReport(month=month, entries=points, avg_mood=avg, entry_count=len(points))
