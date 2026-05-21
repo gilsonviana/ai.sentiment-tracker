@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS entries (
     id          TEXT PRIMARY KEY,
     content     TEXT NOT NULL,
     created_at  TEXT NOT NULL,
+    entry_date  TEXT NOT NULL,
     status      TEXT NOT NULL DEFAULT 'pending'
 );
 """

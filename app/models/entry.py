@@ -1,5 +1,5 @@
 import re
-from datetime import datetime
+from datetime import datetime, date
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field, field_validator
 class JournalEntryCreate(BaseModel):
     """Payload the client sends to POST /entries."""
     content: str = Field(..., min_length=1, max_length=5000)
+    entry_date: date | None = None  # defaults to today in save_entry if omitted
 
     @field_validator("content")
     @classmethod
@@ -21,6 +22,7 @@ class JournalEntryDB(BaseModel):
     id: str
     content: str
     created_at: datetime
+    entry_date: date
     status: str  # "pending" | "processed" | "failed"
 
 class JournalEntryResponse(BaseModel):
@@ -29,3 +31,4 @@ class JournalEntryResponse(BaseModel):
     content: str
     status: str
     created_at: datetime
+    entry_date: date

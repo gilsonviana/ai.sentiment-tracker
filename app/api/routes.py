@@ -1,4 +1,5 @@
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from typing import Optional
 import aiosqlite
 
 from app.models.entry import JournalEntryCreate, JournalEntryResponse
@@ -11,13 +12,21 @@ router = APIRouter(prefix="/entries", tags=["entries"])
 
 @router.get("", response_model=list[JournalEntryResponse], status_code=200)
 async def list_entries(
+    month: Optional[str] = Query(None, description="Filter by month, format YYYY-MM"),
     db: aiosqlite.Connection = Depends(get_db),
 ):
-    async with db.execute(
-        "SELECT * FROM entries ORDER BY created_at DESC"
-    ) as cursor:
-        rows = await cursor.fetchall()
-        return [JournalEntryResponse(**dict(row)) for row in rows]
+    if month:
+        async with db.execute(
+            "SELECT * FROM entries WHERE entry_date LIKE ? ORDER BY entry_date DESC, created_at DESC",
+            (f"{month}-%",),
+        ) as cursor:
+            rows = await cursor.fetchall()
+    else:
+        async with db.execute(
+            "SELECT * FROM entries ORDER BY entry_date DESC, created_at DESC"
+        ) as cursor:
+            rows = await cursor.fetchall()
+    return [JournalEntryResponse(**dict(row)) for row in rows]
 
 
 
@@ -27,7 +36,7 @@ async def create_entry(
     background_tasks: BackgroundTasks,
     db: aiosqlite.Connection = Depends(get_db),
 ):
-    entry_id = await save_entry(db, payload.content)
+    entry_id = await save_entry(db, payload.content, payload.entry_date)
     background_tasks.add_task(run_analysis_pipeline, entry_id, payload.content, db)
     entry = await get_entry(db, entry_id)
     return entry

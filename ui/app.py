@@ -1,3 +1,4 @@
+import datetime
 import re
 import time
 
@@ -11,9 +12,9 @@ MAX_POLLS = 40
 
 # ── API helpers ───────────────────────────────────────────────────────────────
 
-def post_entry(content: str) -> dict:
+def post_entry(content: str, entry_date: str) -> dict:
     with httpx.Client(base_url=API_BASE, timeout=10.0) as client:
-        r = client.post("/entries", json={"content": content})
+        r = client.post("/entries", json={"content": content, "entry_date": entry_date})
         r.raise_for_status()
         return r.json()
 
@@ -39,9 +40,10 @@ def fetch_analysis(entry_id: str) -> dict:
         return r.json()
 
 
-def fetch_all_entries() -> list[dict]:
+def fetch_all_entries(month: str | None = None) -> list[dict]:
+    params = {"month": month} if month else {}
     with httpx.Client(base_url=API_BASE, timeout=10.0) as client:
-        r = client.get("/entries")
+        r = client.get("/entries", params=params)
         r.raise_for_status()
         return r.json()
 
@@ -101,6 +103,7 @@ tab_write, tab_browse, tab_health = st.tabs(["Write Entry", "Browse Entries", "A
 # ── Tab 1: Write Entry ────────────────────────────────────────────────────────
 
 with tab_write:
+    entry_date = st.date_input("Entry date", value=datetime.date.today())
     content = st.text_area(
         label="Journal entry",
         max_chars=5000,
@@ -119,7 +122,7 @@ with tab_write:
         st.session_state.analysis_result = None
         st.session_state.poll_error = None
         try:
-            entry = post_entry(content)
+            entry = post_entry(content, entry_date.isoformat())
             st.session_state.submitted_entry_id = entry["id"]
         except Exception as e:
             st.error(f"Failed to submit: {e}")
@@ -152,7 +155,9 @@ with tab_write:
 # ── Tab 2: Browse Entries ─────────────────────────────────────────────────────
 
 with tab_browse:
-    col_filter, col_search, col_refresh = st.columns([1, 2, 1])
+    col_month, col_filter, col_search, col_refresh = st.columns([1, 1, 2, 1])
+    with col_month:
+        month_filter = st.text_input("Month", placeholder="YYYY-MM")
     with col_filter:
         status_filter = st.selectbox(
             "Status",
@@ -166,7 +171,7 @@ with tab_browse:
         refresh = st.button("Refresh", key="refresh_browse")
 
     try:
-        entries = fetch_all_entries()
+        entries = fetch_all_entries(month=month_filter.strip() or None)
     except Exception as e:
         st.error(f"Could not load entries: {e}")
         entries = []
@@ -188,12 +193,13 @@ with tab_browse:
                 entry["status"], "gray"
             )
             badge = f":{badge_color}[{entry['status'].upper()}]"
-            timestamp = entry["created_at"][:19].replace("T", " ")
+            entry_date_str = entry.get("entry_date", "")[:10]
             preview = entry["content"][:80] + ("…" if len(entry["content"]) > 80 else "")
-            header = f"{badge}  ·  {timestamp}  ·  {preview}"
+            header = f"{badge}  ·  {entry_date_str}  ·  {preview}"
 
             with st.expander(header):
                 st.markdown(f"**ID:** `{entry['id']}`")
+                st.markdown(f"**Entry date:** {entry_date_str}")
                 st.markdown(f"**Content:**\n\n{entry['content']}")
                 st.divider()
 

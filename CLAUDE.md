@@ -108,7 +108,7 @@ All services are singletons loaded at import time (avoid re-initialization per r
 
 ### Database Schema
 
-- `entries(id, content, created_at, status)` — raw input and processing state
+- `entries(id, content, created_at, entry_date, status)` — raw input; `entry_date` is the user-supplied journal date (`YYYY-MM-DD`, defaults to today); `created_at` is the server-side UTC timestamp
 - `analysis(entry_id, vader_score, roberta_score, composite_score, label, entities, analysed_at)` — ML output; `entities` stored as JSON
 
 ## Environment Variables

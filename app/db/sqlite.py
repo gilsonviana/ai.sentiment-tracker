@@ -1,7 +1,7 @@
 import aiosqlite
 import json
 import uuid
-from datetime import datetime
+from datetime import datetime, date as Date
 from app.config import settings
 from app.models.entry import JournalEntryDB
 from app.models.analysis import AnalysisResponse
@@ -16,12 +16,13 @@ async def get_db() -> aiosqlite.Connection:
         db.row_factory = aiosqlite.Row
         yield db
 
-async def save_entry(db: aiosqlite.Connection, content: str) -> str:
+async def save_entry(db: aiosqlite.Connection, content: str, entry_date: Date | None = None) -> str:
     """Persist raw entry, return generated ID."""
     entry_id = str(uuid.uuid4())
+    resolved_date = (entry_date or Date.today()).isoformat()
     await db.execute(
-        "INSERT INTO entries (id, content, created_at, status) VALUES (?, ?, ?, ?)",
-        (entry_id, content, datetime.utcnow().isoformat(), "pending"),
+        "INSERT INTO entries (id, content, created_at, entry_date, status) VALUES (?, ?, ?, ?, ?)",
+        (entry_id, content, datetime.utcnow().isoformat(), resolved_date, "pending"),
     )
     await db.commit()
     return entry_id
