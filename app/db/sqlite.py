@@ -1,8 +1,10 @@
 import aiosqlite
+import json
 import uuid
 from datetime import datetime
 from app.config import settings
 from app.models.entry import JournalEntryDB
+from app.models.analysis import AnalysisResponse
 from pathlib import Path
 
 DB_PATH = settings.db_path
@@ -39,3 +41,14 @@ async def get_entry(db: aiosqlite.Connection, entry_id: str) -> JournalEntryDB |
         if row is None:
             return None
         return JournalEntryDB(**dict(row))
+
+async def get_analysis(db: aiosqlite.Connection, entry_id: str) -> AnalysisResponse | None:
+    async with db.execute(
+        "SELECT * FROM analysis WHERE entry_id = ?", (entry_id,)
+    ) as cursor:
+        row = await cursor.fetchone()
+        if row is None:
+            return None
+        data = dict(row)
+        data["entities"] = json.loads(data["entities"] or "[]")
+        return AnalysisResponse(**data)

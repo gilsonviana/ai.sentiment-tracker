@@ -13,7 +13,7 @@ _roberta = hf_pipeline(
 )
 
 # Map RoBERTa label strings to a -1..1 float
-_LABEL_MAP = {"LABEL_0": -1.0, "LABEL_1": 0.0, "LABEL_2": 1.0}
+_LABEL_MAP = {"negative": -1.0, "neutral": 0.0, "positive": 1.0}
 
 
 def _vader_score(text: str) -> float:
@@ -21,7 +21,7 @@ def _vader_score(text: str) -> float:
 
 
 def _roberta_score(text: str) -> float:
-    result = _roberta(text[:512])[0]  # model max 512 tokens
+    result = _roberta(text[:512])[0][0]  # [batch][top_k] — top_k=1 wraps in extra list
     label = result["label"]
     return _LABEL_MAP.get(label, 0.0)
 

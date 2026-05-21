@@ -1,9 +1,10 @@
-.PHONY: install setup run test lint check-python freeze
+.PHONY: install setup run ui test lint check-python freeze
 
 VENV        := .venv
 PYTHON      := $(VENV)/bin/python
 PIP         := $(VENV)/bin/pip
 UVICORN     := $(VENV)/bin/uvicorn
+STREAMLIT   := $(VENV)/bin/streamlit
 PYTEST      := $(VENV)/bin/pytest
 REQUIRED_PY := 3.12
 
@@ -53,6 +54,9 @@ freeze:
 # ── Dev commands ──────────────────────────────────────────────────────────────
 run:
 	$(UVICORN) app.main:app --reload --port 8000
+
+ui:
+	$(STREAMLIT) run ui/app.py --server.port 8501
 
 test:
 	$(PYTEST) tests/ -v

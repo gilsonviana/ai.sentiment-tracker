@@ -115,6 +115,25 @@ make run
 
 ---
 
+## 6. Streamlit UI
+
+A lightweight testing harness for exploring the full API before building the production React frontend.
+
+```bash
+# API must be running first (in a separate terminal)
+make run        # Terminal 1 → http://localhost:8000
+
+# Launch the UI
+make ui         # Terminal 2 → http://localhost:8501
+```
+
+The UI covers all three workflows:
+- **Write Entry** — submit text, watch the async analysis pipeline run, and see sentiment scores + named entities
+- **Browse Entries** — filter and search all past entries with expandable analysis results
+- **API Health** — verify the API is reachable
+
+---
+
 ## Generating a lockfile (first time or after changing deps)
 
 ```bash
@@ -148,7 +167,9 @@ versions. Anyone cloning the repo installs an identical environment via
 ## API
 
 - `POST /entries` — submit a journal entry (202, async processing)
+- `GET /entries` — list all entries
 - `GET /entries/{id}` — poll processing status
+- `GET /entries/{id}/analysis` — fetch sentiment scores and entities (once processed)
 - `GET /health` — liveness check
 - `GET /docs` — interactive OpenAPI UI
 
