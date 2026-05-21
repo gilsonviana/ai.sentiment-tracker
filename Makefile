@@ -1,4 +1,4 @@
-.PHONY: install setup run ui test lint check-python freeze
+.PHONY: install setup run ui test lint check-python freeze clean-db
 
 VENV        := .venv
 PYTHON      := $(VENV)/bin/python
@@ -63,3 +63,8 @@ test:
 
 lint:
 	$(VENV)/bin/ruff check app/ tests/
+
+clean-db:
+	rm -f data/journal.db
+	rm -rf data/chroma
+	@echo "✅  Database cleared. Run 'make run' to recreate."
