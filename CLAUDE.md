@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-A FastAPI-based journaling API that runs an async ML pipeline on every entry: VADER + RoBERTa sentiment scoring, SentenceTransformer embeddings, and BERT-NER named-entity extraction. Results are stored in SQLite (metadata) and Chroma (vectors). Ollama/Mistral is used for weekly reflection summaries. All ML models run locally.
+A FastAPI-based journaling API that runs an async ML pipeline on every entry: VADER + RoBERTa sentiment scoring and SentenceTransformer embeddings. Results are stored in SQLite (metadata) and Chroma (vectors). Entries are processed asynchronously through a SQLite-backed queue worker. Ollama/Mistral is used for weekly reflection summaries. All ML models run locally.
 
 ## Tech Stack
 
@@ -11,7 +11,7 @@ A FastAPI-based journaling API that runs an async ML pipeline on every entry: VA
 - **Pydantic v2 + pydantic-settings** — schema validation and `.env` config
 - **aiosqlite** — async SQLite driver; `aiosqlite` + raw SQL (no ORM)
 - **Chroma 1.5.9** — local persistent vector store
-- **HuggingFace Transformers** — RoBERTa sentiment (`cardiffnlp/twitter-roberta-base-sentiment-latest`), BERT-NER (`dslim/bert-base-NER`)
+- **HuggingFace Transformers** — RoBERTa sentiment (`cardiffnlp/twitter-roberta-base-sentiment-latest`)
 - **SentenceTransformers** — `all-MiniLM-L6-v2` (384-dim embeddings)
 - **vaderSentiment** — rule-based baseline scorer
 - **Ollama** — external LLM backend (`mistral:7b`) for reflections
@@ -59,18 +59,20 @@ docker-compose up --build
 
 ```
 app/
-  main.py           # FastAPI app, lifespan (runs migrations on startup)
+  main.py           # FastAPI app, lifespan (runs migrations + starts queue worker)
   config.py         # Pydantic settings, reads from .env
   api/
     routes.py       # POST /entries, GET /entries, GET /entries/{id},
                     # GET /entries/{id}/analysis, GET /health, POST /reflect
     deps.py         # DB connection dependency injection
   core/
-    pipeline.py     # run_analysis_pipeline — async fan-out orchestration
+    pipeline.py     # run_analysis_pipeline — async ML fan-out (opens own DB connection)
     preprocessing.py# Text cleaning and sentence chunking
+    worker.py       # Async queue worker loop (poll → claim → process → complete/retry)
   db/
-    migrations.py   # Creates `entries` and `analysis` tables
-    sqlite.py       # Async CRUD operations
+    migrations.py   # Creates entries, analysis, reflections, queue tables
+    queue.py        # Queue CRUD: enqueue, claim_next_job, complete_job, fail_job, reset_stale_jobs
+    sqlite.py       # Async CRUD operations for entries/analysis/reflections
   models/
     entry.py        # JournalEntryCreate, JournalEntryDB, JournalEntryResponse
     analysis.py     # SentimentResult, AnalysisResult, AnalysisResponse
@@ -78,7 +80,6 @@ app/
   services/
     sentiment.py    # VADER + RoBERTa composite scoring
     embeddings.py   # SentenceTransformer singleton
-    ner.py          # BERT-NER with confidence threshold > 0.85
     vector_store.py # Chroma client (upsert + similarity search)
     reflection.py   # Weekly reflection: SQLite context fetch, prompt assembly, Ollama call
 tests/
@@ -96,22 +97,33 @@ data/               # Runtime only — gitignored
 
 ### Request Lifecycle
 
-1. `POST /entries` → saves entry to SQLite, returns `202 Accepted` with `entry_id`
-2. Background task calls `run_analysis_pipeline(entry_id, text, db)`
-3. Pipeline runs sentiment, embeddings, and NER concurrently via `asyncio.gather`; CPU-bound calls go to thread pool via `executor`
+1. `POST /entries` → saves entry to SQLite with `status=pending`, enqueues a job in the `queue` table, returns `202 Accepted`
+2. Queue worker (asyncio task, started in lifespan) polls every 2 seconds, claims the next job
+3. Pipeline runs sentiment scoring and embeddings concurrently via `asyncio.gather`; CPU-bound calls go to thread pool via `executor`
 4. Results written to SQLite `analysis` table and Chroma vector store
-5. Entry `status` updated: `pending` → `processed` (or `failed`)
+5. Entry `status` updated: `pending` → `processed` (or `failed`); job row deleted on success
 6. Client polls `GET /entries/{id}` to check status
-7. Once `processed`, client fetches `GET /entries/{id}/analysis` for scores and entities
+7. Once `processed`, client fetches `GET /entries/{id}/analysis` for scores
+
+### Queue Worker
+
+The queue is backed by the existing SQLite database — no additional infrastructure required. Key properties:
+
+- **Durability** — job survives process restarts; stale `processing` rows are reset to `pending` on startup
+- **Retry with backoff** — up to 3 attempts with exponential backoff (5s → 10s → 20s)
+- **Dead-letter** — jobs exceeding `max_attempts` are set to `status=failed` with the error stored in the `queue` table
 
 ### ML Services
 
 All services are singletons loaded at import time (avoid re-initialization per request). Models are downloaded from HuggingFace Hub on first run — requires `HF_TOKEN` in `.env` to avoid rate limits.
 
+Entity extraction was removed in favour of Mistral-driven analysis in the weekly reflection step, which provides richer structured signals.
+
 ### Database Schema
 
-- `entries(id, content, created_at, entry_date, status)` — raw input; `entry_date` is the user-supplied journal date (`YYYY-MM-DD`, defaults to today); `created_at` is the server-side UTC timestamp
-- `analysis(entry_id, vader_score, roberta_score, composite_score, label, entities, analysed_at)` — ML output; `entities` stored as JSON
+- `entries(id, content, created_at, entry_date, status)` — raw input
+- `analysis(entry_id, vader_score, roberta_score, composite_score, label, entities, analysed_at)` — ML output; `entities` is always `[]`
+- `queue(id, entry_id, attempts, max_attempts, status, error, enqueued_at, next_attempt_at)` — durable job queue
 
 ## Environment Variables
 
@@ -123,7 +135,6 @@ DEBUG=false
 DB_PATH=./data/journal.db
 CHROMA_PATH=./data/chroma
 EMBEDDING_MODEL=all-MiniLM-L6-v2
-NER_MODEL=dslim/bert-base-NER
 ROBERTA_MODEL=cardiffnlp/twitter-roberta-base-sentiment-latest
 OLLAMA_URL=http://localhost:11434
 HF_TOKEN=<your-huggingface-token>
@@ -132,7 +143,7 @@ HF_TOKEN=<your-huggingface-token>
 ## Runtime Requirements
 
 - ~8 GB RAM (Mistral 7B model)
-- ~4.5 GB disk for model weights (Mistral ~4.1 GB, BERT models ~400 MB each)
+- ~4.1 GB disk for model weights (Mistral ~4.1 GB, RoBERTa/MiniLM ~400 MB)
 - Ollama installed and `mistral` model pulled (`ollama pull mistral`)
 - HuggingFace token for model downloads
 
@@ -147,4 +158,4 @@ Integration tests directory exists but is empty — unit tests cover preprocessi
 - **React frontend** — production UI replacing Streamlit.
 
 ### Internationalisation
-- **PT-BR support** — swap models: `pysentimiento` for sentiment, `paraphrase-multilingual-MiniLM-L12-v2` for embeddings, a Portuguese BERT for NER.
+- **PT-BR support** — swap models: `pysentimiento` for sentiment, `paraphrase-multilingual-MiniLM-L12-v2` for embeddings.

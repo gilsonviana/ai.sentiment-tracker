@@ -2,10 +2,10 @@ from statistics import mean
 from typing import Optional
 
 import aiosqlite
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.api.deps import get_db
-from app.core.pipeline import run_analysis_pipeline
+from app.db.queue import enqueue
 from app.db.sqlite import (
     get_analysis,
     get_entry,
@@ -48,13 +48,11 @@ async def list_entries(
 @router.post("", response_model=JournalEntryResponse, status_code=202)
 async def create_entry(
     payload: JournalEntryCreate,
-    background_tasks: BackgroundTasks,
     db: aiosqlite.Connection = Depends(get_db),
 ):
     entry_id = await save_entry(db, payload.content, payload.entry_date)
-    background_tasks.add_task(run_analysis_pipeline, entry_id, payload.content, db)
-    entry = await get_entry(db, entry_id)
-    return entry
+    await enqueue(db, entry_id)
+    return await get_entry(db, entry_id)
 
 
 @router.get("/{entry_id}/analysis", response_model=AnalysisResponse, status_code=200)

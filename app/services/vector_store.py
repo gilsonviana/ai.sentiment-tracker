@@ -15,7 +15,6 @@ def upsert(
     entry_id: str,
     embedding: list[float],
     mood_score: float,
-    entities: list[str],
     created_at: str,
 ) -> None:
     _collection.upsert(
@@ -23,7 +22,6 @@ def upsert(
         embeddings=[embedding],
         metadatas=[{
             "mood_score": mood_score,
-            "entities": ",".join(entities),
             "created_at": created_at,
         }],
     )
@@ -73,7 +71,6 @@ def get_similar_past_entries(
         {
             "entry_id": entry_id,
             "mood_score": meta["mood_score"],
-            "entities": [e for e in meta["entities"].split(",") if e],
             "created_at": meta["created_at"][:10],
         }
         for entry_id, meta in zip(ids, results["metadatas"][0])

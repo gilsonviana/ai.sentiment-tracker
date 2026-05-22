@@ -1,21 +1,29 @@
-from contextlib import asynccontextmanager
+import asyncio
+from contextlib import asynccontextmanager, suppress
+
 from fastapi import FastAPI
+
 from app.api.routes import router, reflect_router, chat_router, mood_router
-from app.db.migrations import run_migrations
 from app.config import settings
+from app.core.worker import worker_loop
+from app.db.migrations import run_migrations
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await run_migrations()
+    worker_task = asyncio.create_task(worker_loop())
     print(f"[startup] {settings.app_name} ready")
     yield
+    worker_task.cancel()
+    with suppress(asyncio.CancelledError):
+        await worker_task
 
 
 app = FastAPI(
     title=settings.app_name,
     description="Sentiment-aware personal journal with local ML pipeline.",
-    version="0.2.0",
+    version="0.3.0",
     lifespan=lifespan,
 )
 

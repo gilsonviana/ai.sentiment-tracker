@@ -31,10 +31,9 @@ async def answer_question(db: aiosqlite.Connection, question: str) -> dict:
 
     context_lines = []
     for e in entries:
-        entities_str = ", ".join(e["entities"]) if e["entities"] else "none"
         context_lines.append(
-            f"- {e['entry_date']} | mood: {e['composite_score']:+.2f} ({e['label']}) "
-            f"| entities: {entities_str}\n  \"{e['content']}\""
+            f"- {e['entry_date']} | mood: {e['composite_score']:+.2f} ({e['label']})\n"
+            f"  \"{e['content']}\""
         )
     context = "\n".join(context_lines)
 

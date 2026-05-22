@@ -1,5 +1,4 @@
 import asyncio
-import json
 from datetime import datetime, timedelta
 from functools import partial
 from statistics import mean
@@ -23,22 +22,17 @@ async def fetch_window_context(
     """Returns entries + analysis joined for the given date window."""
     async with db.execute(
         """
-        SELECT e.content, e.entry_date, a.composite_score, a.label, a.entities
+        SELECT e.content, e.entry_date, a.composite_score, a.label
         FROM entries e
         JOIN analysis a ON a.entry_id = e.id
         WHERE e.entry_date >= ? AND e.entry_date <= ? AND e.status = 'processed'
         ORDER BY e.entry_date ASC
-        """,
+""",
         (window_start, window_end),
     ) as cursor:
         rows = await cursor.fetchall()
 
-    result = []
-    for row in rows:
-        data = dict(row)
-        data["entities"] = json.loads(data["entities"] or "[]")
-        result.append(data)
-    return result
+    return [dict(row) for row in rows]
 
 
 def build_prompt(
@@ -50,18 +44,16 @@ def build_prompt(
     lines = []
     for e in entries:
         score = e["composite_score"]
-        entities_str = ", ".join(e["entities"]) if e["entities"] else "none"
         lines.append(
-            f"- {e['entry_date']} | mood: {score:+.2f} ({e['label']}) "
-            f"| entities: {entities_str}\n  \"{e['content']}\""
+            f"- {e['entry_date']} | mood: {score:+.2f} ({e['label']})\n"
+            f"  \"{e['content']}\""
         )
     context = "\n".join(lines)
 
     history_block = ""
     if similar_past:
         hist_lines = [
-            f"  - {p['created_at']} | mood: {p['mood_score']:+.2f} "
-            f"| entities: {', '.join(p['entities']) or 'none'}"
+            f"  - {p['created_at']} | mood: {p['mood_score']:+.2f}"
             for p in similar_past
         ]
         history_block = (
@@ -85,7 +77,7 @@ Here are their journal entries {window_desc}:
 
 Write a personal reflection in 3–4 paragraphs. Use second person ("you felt", "your week").
 Synthesise the entries — do not list them verbatim. Identify the emotional arc across the period.
-Note any recurring themes or entities. End with one forward-looking observation or gentle encouragement.
+Identify recurring emotional patterns. End with one forward-looking observation or gentle encouragement.
 Keep the tone warm, honest, and grounded."""
 
 

@@ -36,11 +36,25 @@ CREATE TABLE IF NOT EXISTS reflections (
 );
 """
 
+CREATE_QUEUE = """
+CREATE TABLE IF NOT EXISTS queue (
+    id              TEXT PRIMARY KEY,
+    entry_id        TEXT NOT NULL REFERENCES entries(id),
+    attempts        INTEGER NOT NULL DEFAULT 0,
+    max_attempts    INTEGER NOT NULL DEFAULT 3,
+    status          TEXT NOT NULL DEFAULT 'pending',
+    error           TEXT,
+    enqueued_at     TEXT NOT NULL,
+    next_attempt_at TEXT NOT NULL
+);
+"""
+
 async def run_migrations() -> None:
     Path(settings.db_path).parent.mkdir(parents=True, exist_ok=True)
     async with aiosqlite.connect(settings.db_path) as db:
         await db.execute(CREATE_ENTRIES)
         await db.execute(CREATE_ANALYSIS)
         await db.execute(CREATE_REFLECTIONS)
+        await db.execute(CREATE_QUEUE)
         await db.commit()
     print("Migrations complete.")

@@ -13,7 +13,6 @@ class Settings(BaseSettings):
 
     # Models
     embedding_model: str = "all-MiniLM-L6-v2"
-    ner_model: str = "dslim/bert-base-NER"
     roberta_model: str = "cardiffnlp/twitter-roberta-base-sentiment-latest"
 
     # Inference
@@ -22,6 +21,9 @@ class Settings(BaseSettings):
 
     # Ollama
     ollama_url: str = "http://localhost:11434"
+
+    # CORS
+    cors_origins: list[str] = ["http://localhost:3000", "http://localhost:8501"]
 
     class Config:
         env_file = ".env"
