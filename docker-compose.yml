@@ -1,11 +1,74 @@
 version: "3.9"
+
 services:
   api:
-    build: .
+    build:
+      context: ./server
+      dockerfile: Dockerfile
     ports:
       - "8000:8000"
     volumes:
       - ./data:/app/data
     env_file:
       - .env
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    environment:
+      DB_PATH: /app/data/journal.db
+      CHROMA_PATH: /app/data/chroma
+      OLLAMA_URL: http://ollama:11434
+      CORS_ORIGINS: '["http://localhost:3000","http://localhost:8501"]'
+    depends_on:
+      ollama:
+        condition: service_healthy
+    restart: unless-stopped
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+      - ./scripts/ollama-entrypoint.sh:/scripts/entrypoint.sh:ro
+    entrypoint: ["/bin/sh", "/scripts/entrypoint.sh"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    restart: unless-stopped
+
+  # ── Dev-only services (docker compose --profile dev up) ─────────────────────
+
+  client:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      VITE_API_URL: http://localhost:8000
+    depends_on:
+      - api
+    profiles:
+      - dev
+
+  ui:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    ports:
+      - "8501:8501"
+    env_file:
+      - .env
+    environment:
+      DB_PATH: /app/data/journal.db
+      CHROMA_PATH: /app/data/chroma
+      OLLAMA_URL: http://ollama:11434
+    command: streamlit run ui/app.py --server.port 8501 --server.address 0.0.0.0
+    depends_on:
+      - api
+    profiles:
+      - dev
+
+volumes:
+  ollama_data:

@@ -10,3 +10,10 @@ data/
 dist/
 build/
 *.sqlite3
+
+# Monorepo
+server/.venv/
+server/__pycache__/
+server/.pytest_cache/
+client/node_modules/
+client/dist/
