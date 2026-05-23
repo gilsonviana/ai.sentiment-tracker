@@ -47,6 +47,5 @@ async def run_analysis_pipeline(entry_id: str, raw_text: str) -> None:
 
             await update_status(db, entry_id, "processed")
 
-        except Exception as exc:
-            await update_status(db, entry_id, "failed")
-            raise exc
+        except Exception:
+            raise
