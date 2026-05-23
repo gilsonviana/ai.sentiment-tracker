@@ -23,27 +23,40 @@ async def claim_next_job(db: aiosqlite.Connection) -> dict | None:
     queue is empty.
     """
     now = datetime.utcnow().isoformat()
-    async with db.execute(
-        """SELECT id, entry_id, attempts, max_attempts
-           FROM queue
-           WHERE status = 'pending' AND next_attempt_at <= ?
-           ORDER BY enqueued_at ASC
-           LIMIT 1""",
-        (now,),
-    ) as cursor:
-        row = await cursor.fetchone()
 
-    if row is None:
-        return None
+    try:
+        await db.execute("BEGIN IMMEDIATE")
+        async with db.execute(
+            """SELECT id, entry_id, attempts, max_attempts
+               FROM queue
+               WHERE status = 'pending' AND next_attempt_at <= ?
+               ORDER BY enqueued_at ASC
+               LIMIT 1""",
+            (now,),
+        ) as cursor:
+            row = await cursor.fetchone()
 
-    job = dict(row)
-    await db.execute(
-        "UPDATE queue SET status = 'processing', attempts = attempts + 1 WHERE id = ?",
-        (job["id"],),
-    )
-    await db.commit()
-    job["attempts"] += 1
-    return job
+        if row is None:
+            await db.commit()
+            return None
+
+        job = dict(row)
+        cursor = await db.execute(
+            """UPDATE queue
+               SET status = 'processing', attempts = attempts + 1
+               WHERE id = ? AND status = 'pending'""",
+            (job["id"],),
+        )
+        if cursor.rowcount != 1:
+            await db.rollback()
+            return None
+
+        await db.commit()
+        job["attempts"] += 1
+        return job
+    except Exception:
+        await db.rollback()
+        raise
 
 
 async def complete_job(db: aiosqlite.Connection, job_id: str) -> None:
