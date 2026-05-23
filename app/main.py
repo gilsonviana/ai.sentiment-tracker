@@ -1,4 +1,5 @@
 import asyncio
+import os
 from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI
@@ -12,6 +13,11 @@ from app.db.migrations import run_migrations
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await run_migrations()
+    if int(os.getenv("WEB_CONCURRENCY", "1")) > 1:
+        raise RuntimeError(
+            "Queue worker runs in-process. Start API with a single process "
+            "(WEB_CONCURRENCY=1)."
+        )
     worker_task = asyncio.create_task(worker_loop())
     print(f"[startup] {settings.app_name} ready")
     yield
