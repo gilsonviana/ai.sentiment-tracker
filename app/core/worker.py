@@ -55,7 +55,7 @@ async def worker_loop() -> None:
                     await complete_job(db, job["id"])
                 logger.info("[worker] completed job=%s", job["id"])
             except Exception as exc:
-                backoff = 2 ** job["attempts"] * 5
+                backoff = 2 ** (job["attempts"] - 1) * 5
                 logger.warning(
                     "[worker] job=%s failed (attempt %d/%d): %s — retry in %ds",
                     job["id"], job["attempts"], job["max_attempts"], exc, backoff,
