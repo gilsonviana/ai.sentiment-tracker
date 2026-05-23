@@ -13,10 +13,11 @@ from app.db.migrations import run_migrations
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await run_migrations()
-    if int(os.getenv("WEB_CONCURRENCY", "1")) > 1:
+    web_concurrency = int(os.getenv("WEB_CONCURRENCY", "1"))
+    if web_concurrency > 1:
         raise RuntimeError(
-            "Queue worker runs in-process. Start API with a single process "
-            "(WEB_CONCURRENCY=1)."
+            "Queue worker runs in-process and requires WEB_CONCURRENCY=1. "
+            f"Current value: {web_concurrency}."
         )
     worker_task = asyncio.create_task(worker_loop())
     print(f"[startup] {settings.app_name} ready")
