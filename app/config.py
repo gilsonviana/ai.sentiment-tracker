@@ -22,9 +22,6 @@ class Settings(BaseSettings):
     # Ollama
     ollama_url: str = "http://localhost:11434"
 
-    # CORS
-    cors_origins: list[str] = ["http://localhost:3000", "http://localhost:8501"]
-
     class Config:
         env_file = ".env"
 
