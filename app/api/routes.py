@@ -12,10 +12,11 @@ from app.db.sqlite import (
     get_mood_data,
     list_reflections,
     save_entry,
+    update_entry,
 )
 from app.models.analysis import AnalysisResponse
 from app.models.chat import ChatRequest, ChatResponse
-from app.models.entry import JournalEntryCreate, JournalEntryResponse
+from app.models.entry import JournalEntryCreate, JournalEntryResponse, JournalEntryUpdate
 from app.models.mood_report import MoodDataPoint, MoodReport
 from app.models.reflection import ReflectionResponse, StoredReflection
 from app.services.reflection import generate_weekly_reflection
@@ -53,6 +54,25 @@ async def create_entry(
     entry_id = await save_entry(db, payload.content, payload.entry_date)
     await enqueue(db, entry_id)
     return await get_entry(db, entry_id)
+
+
+@router.patch("/{entry_id}", response_model=JournalEntryResponse, status_code=202)
+async def patch_entry(
+    entry_id: str,
+    payload: JournalEntryUpdate,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    if not payload.has_changes():
+        raise HTTPException(status_code=422, detail="No fields provided to update")
+
+    entry = await update_entry(db, entry_id, payload.content, payload.entry_date)
+    if entry is None:
+        raise HTTPException(status_code=404, detail="Entry not found")
+
+    if payload.content is not None:
+        await enqueue(db, entry_id)
+
+    return entry
 
 
 @router.get("/{entry_id}/analysis", response_model=AnalysisResponse, status_code=200)

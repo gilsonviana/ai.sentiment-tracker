@@ -49,6 +49,13 @@ def fetch_all_entries(month: str | None = None) -> list[dict]:
         return r.json()
 
 
+def patch_entry(entry_id: str, payload: dict) -> dict:
+    with httpx.Client(base_url=API_BASE, timeout=10.0) as client:
+        r = client.patch(f"/entries/{entry_id}", json=payload)
+        r.raise_for_status()
+        return r.json()
+
+
 def generate_reflection(start: str | None = None, end: str | None = None) -> dict:
     params = {}
     if start:
@@ -265,6 +272,47 @@ with tab_browse:
                 else:
                     st.error("Analysis failed for this entry.")
 
+                st.divider()
+                with st.form(key=f"edit_{entry['id']}"):
+                    st.markdown("**Edit Entry**")
+                    new_content = st.text_area(
+                        "Content",
+                        value=entry["content"],
+                        max_chars=5000,
+                        height=150,
+                    )
+                    new_date = st.date_input(
+                        "Entry date",
+                        value=datetime.date.fromisoformat(entry_date_str),
+                    )
+                    st.caption(f"{len(new_content)} / 5000 characters")
+                    if st.form_submit_button("Save Changes", type="primary"):
+                        content_changed = new_content.strip() != entry["content"]
+                        date_changed = new_date.isoformat() != entry_date_str
+                        if not content_changed and not date_changed:
+                            st.warning("No changes made.")
+                        else:
+                            try:
+                                update_payload: dict = {}
+                                if content_changed:
+                                    update_payload["content"] = new_content.strip()
+                                if date_changed:
+                                    update_payload["entry_date"] = new_date.isoformat()
+                                patch_entry(entry["id"], update_payload)
+                                st.success(
+                                    "Entry updated — re-analysis queued."
+                                    if content_changed else "Entry date updated."
+                                )
+                                st.rerun()
+                            except httpx.HTTPStatusError as e:
+                                try:
+                                    detail = e.response.json().get("detail", str(e))
+                                except Exception:
+                                    detail = str(e)
+                                st.error(f"Update failed: {detail}")
+                            except Exception as e:
+                                st.error(f"Update failed: {e}")
+
 
 # ── Tab 3: Reflection ─────────────────────────────────────────────────────────
 
@@ -445,6 +493,7 @@ with tab_health:
 | `POST` | `/entries` | Submit new entry |
 | `GET` | `/entries` | List all entries |
 | `GET` | `/entries/{id}` | Poll processing status |
+| `PATCH` | `/entries/{id}` | Edit entry content or date |
 | `GET` | `/entries/{id}/analysis` | Fetch sentiment scores and entities |
 | `POST` | `/reflect` | Generate reflection (optional `?start=&end=`) |
 | `GET` | `/reflect` | List past reflections |

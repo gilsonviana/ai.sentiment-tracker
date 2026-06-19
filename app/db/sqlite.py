@@ -34,6 +34,36 @@ async def update_status(db: aiosqlite.Connection, entry_id: str, status: str) ->
     )
     await db.commit()
 
+async def update_entry(
+    db: aiosqlite.Connection,
+    entry_id: str,
+    content: str | None,
+    entry_date: Date | None,
+) -> JournalEntryDB | None:
+    sets: list[str] = []
+    params: list = []
+
+    if content is not None:
+        sets += ["content = ?", "status = 'pending'"]
+        params.append(content)
+
+    if entry_date is not None:
+        sets.append("entry_date = ?")
+        params.append(entry_date.isoformat())
+
+    params.append(entry_id)
+    cursor = await db.execute(
+        f"UPDATE entries SET {', '.join(sets)} WHERE id = ?",
+        params,
+    )
+    await db.commit()
+
+    if cursor.rowcount == 0:
+        return None
+
+    return await get_entry(db, entry_id)
+
+
 async def get_entry(db: aiosqlite.Connection, entry_id: str) -> JournalEntryDB | None:
     async with db.execute(
         "SELECT * FROM entries WHERE id = ?", (entry_id,)
