@@ -5,7 +5,7 @@ import aiosqlite
 from app.config import settings
 from app.db.sqlite import get_entries_by_ids
 from app.services.embeddings import embed_text
-from app.services.reflection import call_ollama
+from app.services.reflection import call_llm
 from app.services.vector_store import semantic_search
 
 
@@ -48,5 +48,5 @@ User's question: {question}
 
 Answer thoughtfully based on the journal entries above. Be specific and reference entries when relevant. Keep your answer concise (2–3 paragraphs max). Use second person ("you felt", "you wrote")."""
 
-    answer = await call_ollama(prompt, model=model)
+    answer = await call_llm(prompt, model=model)
     return {"answer": answer, "sources_used": len(entries)}

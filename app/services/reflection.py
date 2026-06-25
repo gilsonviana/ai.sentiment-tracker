@@ -7,6 +7,11 @@ import aiosqlite
 import requests
 from fastapi import HTTPException
 
+try:
+    import anthropic
+except ImportError:
+    anthropic = None
+
 from app.config import settings
 from app.db.sqlite import save_reflection
 from app.services.embeddings import embed_text
@@ -117,6 +122,66 @@ async def call_ollama(prompt: str, model: str = settings.ollama_model) -> str:
         raise HTTPException(status_code=500, detail=str(e))
 
 
+def _call_claude_sync(prompt: str, model: str) -> str:
+    """Synchronous Claude call — must be run via run_in_executor."""
+    if not anthropic:
+        raise RuntimeError("anthropic_not_installed")
+    if not settings.anthropic_api_key:
+        raise RuntimeError("anthropic_api_key_not_set")
+
+    try:
+        client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+        message = client.messages.create(
+            model=model,
+            max_tokens=1024,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        return message.content[0].text
+    except anthropic.AuthenticationError:
+        raise RuntimeError("anthropic_auth_error")
+    except anthropic.RateLimitError:
+        raise RuntimeError("anthropic_rate_limit")
+    except Exception as e:
+        raise RuntimeError(f"anthropic_error: {e}")
+
+
+async def call_claude(prompt: str, model: str) -> str:
+    """Calls Claude via Anthropic API in a thread pool to avoid blocking the event loop."""
+    loop = asyncio.get_running_loop()
+    try:
+        return await loop.run_in_executor(None, partial(_call_claude_sync, prompt, model))
+    except RuntimeError as e:
+        error_str = str(e)
+        if "anthropic_not_installed" in error_str:
+            raise HTTPException(
+                status_code=500,
+                detail="Anthropic SDK not installed. Install with: pip install anthropic",
+            )
+        if "anthropic_api_key_not_set" in error_str:
+            raise HTTPException(
+                status_code=500,
+                detail="ANTHROPIC_API_KEY environment variable not set",
+            )
+        if "anthropic_auth_error" in error_str:
+            raise HTTPException(
+                status_code=401,
+                detail="Anthropic API key is invalid",
+            )
+        if "anthropic_rate_limit" in error_str:
+            raise HTTPException(
+                status_code=429,
+                detail="Anthropic API rate limit exceeded",
+            )
+        raise HTTPException(status_code=500, detail=error_str)
+
+
+async def call_llm(prompt: str, model: str = settings.ollama_model) -> str:
+    """Routes to Claude or Ollama based on model name."""
+    if model.startswith("claude-"):
+        return await call_claude(prompt, model)
+    return await call_ollama(prompt, model)
+
+
 async def generate_weekly_reflection(
     db: aiosqlite.Connection,
     start: str | None = None,
@@ -158,7 +223,7 @@ async def generate_weekly_reflection(
     )
 
     prompt = build_prompt(entries, similar_past, window_start, window_end)
-    narrative = await call_ollama(prompt, model=model)
+    narrative = await call_llm(prompt, model=model)
     avg_mood = round(mean(e["composite_score"] for e in entries), 2)
 
     await save_reflection(db, narrative, len(entries), avg_mood, window_start, window_end)

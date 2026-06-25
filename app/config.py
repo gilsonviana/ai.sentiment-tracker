@@ -23,6 +23,9 @@ class Settings(BaseSettings):
     ollama_url: str = "http://localhost:11434"
     ollama_model: str = "mistral"
 
+    # Anthropic
+    anthropic_api_key: str = ""
+
     # CORS
     cors_origins: list[str] = ["http://localhost:3000", "http://localhost:8501"]
 

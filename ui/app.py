@@ -333,13 +333,16 @@ with tab_reflect:
         )
     with col_model:
         reflect_model = st.selectbox(
-            "Model", ["mistral", "llama3"], index=0, key="reflect_model"
+            "Model",
+            ["mistral", "llama3", "claude-haiku-4-5-20251001"],
+            index=0,
+            key="reflect_model",
         )
 
     if st.button("Generate Reflection", type="primary"):
         st.session_state.reflection_result = None
         st.session_state.reflection_error = None
-        with st.spinner("Generating reflection with Ollama… this may take a minute."):
+        with st.spinner("Generating reflection. this may take a minute."):
             try:
                 result = generate_reflection(
                     start=reflect_start.isoformat() if reflect_start else None,
@@ -404,7 +407,10 @@ with tab_chat:
         )
     with col_model_chat:
         chat_model = st.selectbox(
-            "Model", ["mistral", "llama3"], index=0, key="chat_model"
+            "Model",
+            ["mistral", "llama3", "claude-haiku-4-5-20251001"],
+            index=0,
+            key="chat_model",
         )
 
     ask_disabled = not question.strip()

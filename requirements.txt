@@ -21,6 +21,9 @@ chromadb
 # Ollama client
 requests
 
+# Anthropic Claude
+anthropic
+
 # Dev / test
 pytest==8.2.0
 pytest-asyncio==0.23.6
