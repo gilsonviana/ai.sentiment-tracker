@@ -156,18 +156,34 @@
             Sentiment scoring, embeddings, semantic search, LLM inference<br />
             <span style="font-size: 0.9em; color: #8be9fd"><strong>Stack:</strong> VADER + RoBERTa, sentence-transformers (MiniLM), Ollama / Mistral</span>
           </div>
-          <p style="margin-top: 30px; font-size: 0.85em; text-align: left">
-            Each request flows through all three layers in different patterns
-            depending on the endpoint.
-          </p>
         </section>
 
-        <!-- POST /entries - Combined Flow -->
+        <!-- POST /entries - Request/Response -->
         <section>
-          <h2>POST /entries — Complete Flow</h2>
+          <h2>POST /entries — Request & Response</h2>
           <p style="text-align: left; color: #8be9fd; margin-bottom: 15px">
             Create a new journal entry (synchronous → asynchronous)
           </p>
+          <pre style="margin-top: 20px"><code class="language-json">POST /entries HTTP/1.1
+Content-Type: application/json
+
+{
+  "content": "Today I finally completed that challenging project I've been working on. Feeling accomplished and proud of the results!",
+  "entry_date": "2026-06-24"
+}</code></pre>
+          <pre><code class="language-json">HTTP/1.1 202 Accepted
+Content-Type: application/json
+
+{
+  "id": "entry_abc123",
+  "status": "pending",
+  "created_at": "2026-06-24T14:15:32.456Z"
+}</code></pre>
+        </section>
+
+        <!-- POST /entries - Complete Flow Diagram -->
+        <section>
+          <h3>POST /entries — Complete Flow</h3>
           <div class="mermaid">
 sequenceDiagram
     participant Client as Streamlit UI
@@ -200,26 +216,29 @@ sequenceDiagram
     Client->>API: GET /entries/{id} (polling every 1.5s)
     Note over Client,API: Until status='processed'
           </div>
-          <pre style="margin-top: 20px"><code class="language-json">POST /entries HTTP/1.1
+        </section>
+
+        <!-- GET /analysis - Request & Response -->
+        <section>
+          <h3>GET /entries/{id}/analysis — Request & Response</h3>
+          <pre style="margin-top: 20px"><code class="language-json">GET /entries/entry_abc123/analysis HTTP/1.1
+Accept: application/json</code></pre>
+          <pre><code class="language-json">HTTP/1.1 200 OK
 Content-Type: application/json
 
 {
-  "content": "Today I finally completed that challenging project I've been working on. Feeling accomplished and proud of the results!",
-  "entry_date": "2026-06-24"
-}</code></pre>
-          <pre><code class="language-json">HTTP/1.1 202 Accepted
-Content-Type: application/json
-
-{
-  "id": "entry_abc123",
-  "status": "pending",
-  "created_at": "2026-06-24T14:15:32.456Z"
+  "vader_score": 0.7869,
+  "roberta_score": 0.9521,
+  "composite_score": 0.8695,
+  "label": "POSITIVE",
+  "entities": ["accomplished", "project"],
+  "analysed_at": "2026-06-24T14:32:18.123Z"
 }</code></pre>
         </section>
 
-        <!-- GET /analysis - API & Data Flow -->
+        <!-- GET /analysis - API & Data Flow Diagram -->
         <section>
-          <h3>GET /entries/{id}/analysis: API → Data Layer</h3>
+          <h3>GET /entries/{id}/analysis — API → Data Layer</h3>
           <div class="mermaid">
 sequenceDiagram
     participant Client
@@ -239,50 +258,32 @@ sequenceDiagram
         FastAPI-->>Client: HTTP 404 { detail: "Entry not found" }
     end
           </div>
-          <pre style="margin-top: 20px"><code class="language-json">GET /entries/entry_abc123/analysis HTTP/1.1
-Accept: application/json</code></pre>
+        </section>
+
+        <!-- POST /chat - Request & Response -->
+        <section>
+          <h2>POST /chat — Request & Response</h2>
+          <p style="text-align: left; color: #8be9fd; margin-bottom: 15px">
+            Semantic search + RAG Q&amp;A
+          </p>
+          <pre style="margin-top: 20px"><code class="language-json">POST /chat HTTP/1.1
+Content-Type: application/json
+
+{
+  "question": "What moods have I experienced recently?"
+}</code></pre>
           <pre><code class="language-json">HTTP/1.1 200 OK
 Content-Type: application/json
 
 {
-  "vader_score": 0.7869,
-  "roberta_score": 0.9521,
-  "composite_score": 0.8695,
-  "label": "POSITIVE",
-  "entities": ["accomplished", "project"],
-  "analysed_at": "2026-06-24T14:32:18.123Z"
-}</code></pre>
-          <p style="text-align: left; font-size: 0.8em; margin-top: 15px">
-            <strong>Scores:</strong> VADER (rule-based) + RoBERTa (transformer) averaged into composite.<br />
-            <strong>Entities:</strong> Extracted during preprocessing (JSON stored in DB).
-          </p>
-        </section>
-
-        <!-- POST /chat -->
-        <section>
-          <h2>POST /chat</h2>
-          <p style="text-align: left; color: #8be9fd; margin-bottom: 25px">
-            Semantic search + RAG Q&amp;A
-          </p>
-          <pre
-            style="width: 90%; margin: 0 auto"
-          ><code class="language-json">POST /chat
-{
-  "question": "What moods have I experienced recently?"
-}
-
-Response (3–15s):
-{
-  "answer": "Based on your recent entries, you've experienced
-             positive moods around productivity and accomplishment,
-             with sentiment scores 0.85–0.92.",
+  "answer": "Based on your recent entries, you've experienced positive moods around productivity and accomplishment, with sentiment scores 0.85–0.92.",
   "sources_used": 5
 }</code></pre>
         </section>
 
-        <!-- POST /chat - Full Flow -->
+        <!-- POST /chat - Full Flow Diagram -->
         <section>
-          <h3>POST /chat: API → AI → Data → LLM</h3>
+          <h3>POST /chat — API → AI → Data → LLM</h3>
           <div class="mermaid">
 sequenceDiagram
     participant Client
@@ -327,48 +328,42 @@ sequenceDiagram
             <strong>AI/ML Layer:</strong> Embeddings encode the question; LLM
             (Ollama) generates answer using retrieved context
           </div>
-          <pre
-            style="margin-top: 20px"
-          ><code class="language-python"># Pseudo-code flow
-1. embedding = SentenceTransformer.encode(question)
-2. similar_ids = ChromaDB.search(embedding, k=5)
-3. context_entries = SQLite.fetch(similar_ids)
-4. prompt = f"Context: {context_entries}\nQuestion: {question}"
-5. answer = Ollama.generate(prompt)
-6. return { "answer": answer, "sources_used": len(context_entries) }</code></pre>
         </section>
 
-        <!-- POST /chat Response Example -->
+<!-- POST /reflect - Request & Response -->
         <section>
-          <h3>POST /chat: Response Example</h3>
+          <h2>POST /reflect — Request & Response</h2>
+          <p style="text-align: left; color: #8be9fd; margin-bottom: 15px">
+            Generate a weekly reflection using LLM
+          </p>
+          <pre style="margin-top: 20px"><code class="language-json">POST /reflect?start=2026-06-17&end=2026-06-24 HTTP/1.1
+Accept: application/json</code></pre>
           <pre><code class="language-json">HTTP/1.1 200 OK
 Content-Type: application/json
 
 {
-  "answer": "Based on your recent entries, you've experienced a range of moods.
-             Your most positive entries have been related to completing projects
-             and achieving goals. You mentioned feeling accomplished when finishing
-             work tasks, with sentiment scores around 0.85-0.92.",
-  "sources_used": 5
+  "narrative": "Over this week, you've experienced a strong positive trajectory with sentiment scores averaging 0.82. Key themes include accomplishment from project completions and consistent productivity throughout the week.",
+  "avg_mood": 0.82,
+  "entry_count": 7,
+  "window": {
+    "start": "2026-06-17",
+    "end": "2026-06-24"
+  }
 }</code></pre>
-          <p style="text-align: left; font-size: 0.8em; margin-top: 15px">
-            Response is generated by the Ollama LLM based on the top-5
-            semantically similar past entries.
-          </p>
         </section>
 
-        <!-- POST /reflect -->
+        <!-- POST /reflect - Flow Overview -->
         <section>
-          <h2>POST /reflect</h2>
-          <p style="text-align: left; color: #8be9fd">
-            Generate a weekly reflection using LLM
-          </p>
-          <pre><code class="language">POST /reflect?start=2026-06-17&end=2026-06-24 HTTP/1.1</code></pre>
-          <p style="text-align: left; margin-top: 20px; font-size: 0.85em">
-            Generates a narrative reflection about the mood and themes of a date
-            range by combining<br />
-            aggregated data, similar past entries, and LLM reasoning.
-          </p>
+          <h3>POST /reflect — Aggregation & LLM Generation</h3>
+          <div class="layer-box data">
+            <strong>1. Data Aggregation:</strong> Fetch all entries within the date range, compute average mood score and sentiment distribution
+          </div>
+          <div class="layer-box ai">
+            <strong>2. Semantic Search:</strong> Find emotionally similar past entries using ChromaDB vector search for context
+          </div>
+          <div class="layer-box ai">
+            <strong>3. LLM Reasoning:</strong> Generate narrative reflection using Ollama with aggregated data and similar entry examples
+          </div>
         </section>
 
         <!-- Q&A -->
