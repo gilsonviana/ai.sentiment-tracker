@@ -80,13 +80,13 @@ Identify recurring emotional patterns. End with one forward-looking observation 
 Keep the tone warm, honest, and grounded."""
 
 
-def _call_ollama_sync(prompt: str) -> str:
+def _call_ollama_sync(prompt: str, model: str) -> str:
     """Synchronous Ollama call — must be run via run_in_executor."""
     try:
         response = requests.post(
             f"{settings.ollama_url}/api/generate",
             json={
-                "model": "mistral",
+                "model": model,
                 "prompt": prompt,
                 "stream": False,
                 "options": {
@@ -106,11 +106,11 @@ def _call_ollama_sync(prompt: str) -> str:
         raise RuntimeError(f"ollama_error: {e}")
 
 
-async def call_ollama(prompt: str) -> str:
+async def call_ollama(prompt: str, model: str = settings.ollama_model) -> str:
     """Calls Ollama in a thread pool to avoid blocking the event loop."""
     loop = asyncio.get_running_loop()
     try:
-        return await loop.run_in_executor(None, partial(_call_ollama_sync, prompt))
+        return await loop.run_in_executor(None, partial(_call_ollama_sync, prompt, model))
     except RuntimeError as e:
         if "ollama_offline" in str(e):
             raise HTTPException(
@@ -124,6 +124,7 @@ async def generate_weekly_reflection(
     db: aiosqlite.Connection,
     start: str | None = None,
     end: str | None = None,
+    model: str = settings.ollama_model,
 ) -> dict:
     """Orchestrates context retrieval, prompt assembly, Ollama call, and persistence."""
     today = datetime.utcnow().date()
@@ -160,7 +161,7 @@ async def generate_weekly_reflection(
     )
 
     prompt = build_prompt(entries, similar_past, window_start, window_end)
-    narrative = await call_ollama(prompt)
+    narrative = await call_ollama(prompt, model=model)
     avg_mood = round(mean(e["composite_score"] for e in entries), 2)
 
     await save_reflection(db, narrative, len(entries), avg_mood, window_start, window_end)

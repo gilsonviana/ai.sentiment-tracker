@@ -21,6 +21,7 @@ class Settings(BaseSettings):
 
     # Ollama
     ollama_url: str = "http://localhost:11434"
+    ollama_model: str = "mistral"
 
     # CORS
     cors_origins: list[str] = ["http://localhost:3000", "http://localhost:8501"]

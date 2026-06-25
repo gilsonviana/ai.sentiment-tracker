@@ -56,8 +56,8 @@ def patch_entry(entry_id: str, payload: dict) -> dict:
         return r.json()
 
 
-def generate_reflection(start: str | None = None, end: str | None = None) -> dict:
-    params = {}
+def generate_reflection(start: str | None = None, end: str | None = None, model: str = "mistral") -> dict:
+    params = {"model": model}
     if start:
         params["start"] = start
     if end:
@@ -75,9 +75,9 @@ def fetch_reflections() -> list[dict]:
         return r.json()
 
 
-def ask_question(question: str) -> dict:
+def ask_question(question: str, model: str = "mistral") -> dict:
     with httpx.Client(base_url=API_BASE, timeout=180.0) as client:
-        r = client.post("/chat", json={"question": question})
+        r = client.post("/chat", json={"question": question}, params={"model": model})
         r.raise_for_status()
         return r.json()
 
@@ -322,7 +322,7 @@ with tab_reflect:
         "Leave the date range blank to use the last 7 days, or specify a custom window."
     )
 
-    col_start, col_end = st.columns(2)
+    col_start, col_end, col_model = st.columns(3)
     with col_start:
         reflect_start = st.date_input(
             "From (optional)", value=None, key="reflect_start"
@@ -330,6 +330,10 @@ with tab_reflect:
     with col_end:
         reflect_end = st.date_input(
             "To (optional)", value=None, key="reflect_end"
+        )
+    with col_model:
+        reflect_model = st.selectbox(
+            "Model", ["mistral", "llama3"], index=0, key="reflect_model"
         )
 
     if st.button("Generate Reflection", type="primary"):
@@ -340,6 +344,7 @@ with tab_reflect:
                 result = generate_reflection(
                     start=reflect_start.isoformat() if reflect_start else None,
                     end=reflect_end.isoformat() if reflect_end else None,
+                    model=reflect_model,
                 )
                 st.session_state.reflection_result = result
             except httpx.HTTPStatusError as e:
@@ -389,12 +394,18 @@ with tab_chat:
         'Ask questions about your entries — e.g. "How did I feel about work this month?"'
     )
 
-    question = st.text_input(
-        "Your question",
-        placeholder="How have I been feeling lately?",
-        key="chat_question",
-        max_chars=1000,
-    )
+    col_q, col_model_chat = st.columns([3, 1])
+    with col_q:
+        question = st.text_input(
+            "Your question",
+            placeholder="How have I been feeling lately?",
+            key="chat_question",
+            max_chars=1000,
+        )
+    with col_model_chat:
+        chat_model = st.selectbox(
+            "Model", ["mistral", "llama3"], index=0, key="chat_model"
+        )
 
     ask_disabled = not question.strip()
 
@@ -404,7 +415,7 @@ with tab_chat:
         st.session_state.chat_sources = 0
         with st.spinner("Thinking…"):
             try:
-                result = ask_question(question.strip())
+                result = ask_question(question.strip(), model=chat_model)
                 st.session_state.chat_answer = result["answer"]
                 st.session_state.chat_sources = result["sources_used"]
             except httpx.HTTPStatusError as e:

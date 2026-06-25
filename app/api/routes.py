@@ -109,19 +109,21 @@ async def get_reflections(db: aiosqlite.Connection = Depends(get_db)):
 async def reflect(
     start: Optional[str] = Query(None, description="Window start date YYYY-MM-DD"),
     end: Optional[str] = Query(None, description="Window end date YYYY-MM-DD"),
+    model: str = Query("mistral", description="Ollama model to use (e.g. mistral, llama3)"),
     db: aiosqlite.Connection = Depends(get_db),
 ):
-    result = await generate_weekly_reflection(db, start=start, end=end)
+    result = await generate_weekly_reflection(db, start=start, end=end, model=model)
     return result
 
 
 @chat_router.post("", response_model=ChatResponse, status_code=200)
 async def chat(
     payload: ChatRequest,
+    model: str = Query("mistral", description="Ollama model to use (e.g. mistral, llama3)"),
     db: aiosqlite.Connection = Depends(get_db),
 ):
     from app.services.chat import answer_question
-    result = await answer_question(db, payload.question)
+    result = await answer_question(db, payload.question, model=model)
     return result
 
 

@@ -2,13 +2,14 @@ import asyncio
 
 import aiosqlite
 
+from app.config import settings
 from app.db.sqlite import get_entries_by_ids
 from app.services.embeddings import embed_text
 from app.services.reflection import call_ollama
 from app.services.vector_store import semantic_search
 
 
-async def answer_question(db: aiosqlite.Connection, question: str) -> dict:
+async def answer_question(db: aiosqlite.Connection, question: str, model: str = settings.ollama_model) -> dict:
     """RAG Q&A: embed question → Chroma search → fetch entries → Ollama."""
     embedding = await embed_text(question)
 
@@ -47,5 +48,5 @@ User's question: {question}
 
 Answer thoughtfully based on the journal entries above. Be specific and reference entries when relevant. Keep your answer concise (2–3 paragraphs max). Use second person ("you felt", "you wrote")."""
 
-    answer = await call_ollama(prompt)
+    answer = await call_ollama(prompt, model=model)
     return {"answer": answer, "sources_used": len(entries)}
