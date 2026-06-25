@@ -5,13 +5,13 @@ import asyncio
 import json
 import sys
 import uuid
-from datetime import datetime, date as Date
+from datetime import datetime, date as Date, timezone
 from pathlib import Path
 
 import aiosqlite
 
 
-async def seed_database(json_file: Path, db_path: Path, process_entries: bool = False) -> None:
+async def seed_database(json_file: Path, db_path: Path, process_entries: bool = False) -> bool:
     """Load sample entries from JSON and insert into database."""
 
     # Validate JSON file exists
@@ -43,6 +43,9 @@ async def seed_database(json_file: Path, db_path: Path, process_entries: bool = 
     print(f"\n🔗 Connecting to database at {db_path}...")
     try:
         async with aiosqlite.connect(str(db_path)) as db:
+            # Enable foreign key constraints
+            await db.execute("PRAGMA foreign_keys = ON")
+
             # Run migrations to create tables
             print("📋 Running migrations...")
             await _run_migrations(db)
@@ -52,64 +55,70 @@ async def seed_database(json_file: Path, db_path: Path, process_entries: bool = 
             inserted_count = 0
             skipped_count = 0
 
-            for idx, entry_data in enumerate(entries, 1):
-                try:
-                    # Validate entry
-                    content = entry_data.get("content", "").strip()
-                    entry_date_str = entry_data.get("entry_date")
+            try:
+                for idx, entry_data in enumerate(entries, 1):
+                    try:
+                        # Validate entry
+                        content = entry_data.get("content", "").strip()
+                        entry_date_str = entry_data.get("entry_date")
 
-                    if not content:
-                        print(f"   ⚠️  Entry {idx}: skipped (empty content)")
+                        if not content:
+                            print(f"   ⚠️  Entry {idx}: skipped (empty content)")
+                            skipped_count += 1
+                            continue
+
+                        # Parse date
+                        if entry_date_str:
+                            try:
+                                entry_date = Date.fromisoformat(entry_date_str)
+                            except ValueError:
+                                print(f"   ⚠️  Entry {idx}: invalid date {entry_date_str}, using today")
+                                entry_date = Date.today()
+                        else:
+                            entry_date = Date.today()
+
+                        # Generate ID and insert
+                        entry_id = str(uuid.uuid4())
+                        created_at = datetime.now(timezone.utc).isoformat()
+                        status = "pending" if process_entries else "processed"
+
+                        await db.execute(
+                            """INSERT INTO entries
+                               (id, content, created_at, entry_date, status)
+                               VALUES (?, ?, ?, ?, ?)""",
+                            (entry_id, content, created_at, entry_date.isoformat(), status),
+                        )
+
+                        # Optionally enqueue for processing
+                        if process_entries:
+                            queue_id = str(uuid.uuid4())
+                            now = datetime.now(timezone.utc).isoformat()
+                            await db.execute(
+                                """INSERT INTO queue
+                                   (id, entry_id, status, enqueued_at, next_attempt_at)
+                                   VALUES (?, ?, ?, ?, ?)""",
+                                (queue_id, entry_id, "pending", now, now),
+                            )
+
+                        inserted_count += 1
+                        progress = f"[{idx}/{len(entries)}]"
+                        status_marker = "↳ enqueued" if process_entries else "↳ loaded"
+                        print(f"   {progress} Entry {status_marker}")
+
+                    except Exception as e:
+                        print(f"   ❌  Entry {idx}: {e}")
                         skipped_count += 1
                         continue
 
-                    # Parse date
-                    if entry_date_str:
-                        try:
-                            entry_date = Date.fromisoformat(entry_date_str)
-                        except ValueError:
-                            print(f"   ⚠️  Entry {idx}: invalid date {entry_date_str}, using today")
-                            entry_date = Date.today()
-                    else:
-                        entry_date = Date.today()
+                await db.commit()
 
-                    # Generate ID and insert
-                    entry_id = str(uuid.uuid4())
-                    created_at = datetime.utcnow().isoformat()
-                    status = "pending" if process_entries else "processed"
-
-                    await db.execute(
-                        """INSERT INTO entries
-                           (id, content, created_at, entry_date, status)
-                           VALUES (?, ?, ?, ?, ?)""",
-                        (entry_id, content, created_at, entry_date.isoformat(), status),
-                    )
-
-                    # Optionally enqueue for processing
-                    if process_entries:
-                        queue_id = str(uuid.uuid4())
-                        next_attempt = datetime.utcnow().isoformat()
-                        await db.execute(
-                            """INSERT INTO queue
-                               (id, entry_id, status, enqueued_at, next_attempt_at)
-                               VALUES (?, ?, ?, ?, ?)""",
-                            (queue_id, entry_id, "pending", created_at, next_attempt),
-                        )
-
-                    inserted_count += 1
-                    progress = f"[{idx}/{len(entries)}]"
-                    status_marker = "↳ enqueued" if process_entries else "↳ loaded"
-                    print(f"   {progress} Entry {status_marker}")
-
-                except Exception as e:
-                    print(f"   ❌  Entry {idx}: {e}")
-                    skipped_count += 1
-                    continue
-
-            await db.commit()
+            except Exception as e:
+                await db.rollback()
+                print(f"❌  Database error: {e}")
+                return False
 
     except Exception as e:
-        print(f"❌  Database error: {e}")
+        print(f"❌  Database connection error: {e}")
         return False
 
     # Print summary
