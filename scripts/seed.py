@@ -11,7 +11,7 @@ from pathlib import Path
 import aiosqlite
 
 
-async def seed_database(json_file: Path, db_path: Path, process_entries: bool = False) -> bool:
+async def seed_database(json_file: Path, db_path: Path) -> bool:
     """Load sample entries from JSON and insert into database."""
 
     # Validate JSON file exists
@@ -80,7 +80,7 @@ async def seed_database(json_file: Path, db_path: Path, process_entries: bool = 
                         # Generate ID and insert
                         entry_id = str(uuid.uuid4())
                         created_at = datetime.now(timezone.utc).isoformat()
-                        status = "pending" if process_entries else "processed"
+                        status = "pending"
 
                         await db.execute(
                             """INSERT INTO entries
@@ -89,21 +89,19 @@ async def seed_database(json_file: Path, db_path: Path, process_entries: bool = 
                             (entry_id, content, created_at, entry_date.isoformat(), status),
                         )
 
-                        # Optionally enqueue for processing
-                        if process_entries:
-                            queue_id = str(uuid.uuid4())
-                            now = datetime.now(timezone.utc).isoformat()
-                            await db.execute(
-                                """INSERT INTO queue
-                                   (id, entry_id, status, enqueued_at, next_attempt_at)
-                                   VALUES (?, ?, ?, ?, ?)""",
-                                (queue_id, entry_id, "pending", now, now),
-                            )
+                        # Enqueue for processing
+                        queue_id = str(uuid.uuid4())
+                        now = datetime.now(timezone.utc).isoformat()
+                        await db.execute(
+                            """INSERT INTO queue
+                               (id, entry_id, status, enqueued_at, next_attempt_at)
+                               VALUES (?, ?, ?, ?, ?)""",
+                            (queue_id, entry_id, "pending", now, now),
+                        )
 
                         inserted_count += 1
                         progress = f"[{idx}/{len(entries)}]"
-                        status_marker = "↳ enqueued" if process_entries else "↳ loaded"
-                        print(f"   {progress} Entry {status_marker}")
+                        print(f"   {progress} Entry ↳ enqueued")
 
                     except Exception as e:
                         print(f"   ❌  Entry {idx}: {e}")
@@ -127,10 +125,7 @@ async def seed_database(json_file: Path, db_path: Path, process_entries: bool = 
     print(f"   📊 Inserted: {inserted_count} entries")
     if skipped_count > 0:
         print(f"   ⏭️  Skipped: {skipped_count} entries")
-    if process_entries:
-        print(f"   ⚙️  Status: enqueued for processing")
-    else:
-        print(f"   ⚙️  Status: ready to view (not processing)")
+    print("   ⚙️  Status: enqueued for processing")
     print("=" * 50)
     return True
 
@@ -195,7 +190,6 @@ async def main():
     db_path = project_root / "data" / "journal.db"
 
     # Parse arguments
-    process_entries = "--process" in sys.argv or "-p" in sys.argv
     custom_json = next((arg for arg in sys.argv[1:] if arg.endswith(".json")), None)
 
     if custom_json:
@@ -204,13 +198,8 @@ async def main():
     print("🌱 Sentiment Tracker - Database Seeder")
     print("=" * 50)
 
-    if not await seed_database(json_file, db_path, process_entries):
+    if not await seed_database(json_file, db_path):
         sys.exit(1)
-
-    if not process_entries:
-        print("\n💡 Tip: Use '--process' or '-p' flag to enqueue entries for")
-        print("   sentiment analysis and reflection generation.")
-        print(f"\n   $ python scripts/seed.py --process")
 
 
 if __name__ == "__main__":
