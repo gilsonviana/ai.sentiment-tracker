@@ -146,3 +146,36 @@ make ui         # Terminal 2 → http://localhost:8501
 ```bash
 make test
 ```
+
+---
+
+## Resetting Application Data
+
+To completely wipe all user-generated data (journal entries, embeddings, database), use the reset script:
+
+```bash
+# Preview what will be deleted
+make reset
+
+# Actually perform the reset (requires confirmation)
+make reset-confirm
+```
+
+Or run directly:
+
+```bash
+./scripts/reset.py    # Python version (recommended)
+./scripts/reset.sh    # Shell script version
+```
+
+**What gets deleted:**
+- `data/journal.db` — All user journal entries
+- `data/chroma/` — All vector embeddings
+
+**What's preserved:**
+- Configuration files (`.env`, source code, etc.)
+- Project structure
+
+After reset, the app will recreate a fresh database on next run.
+
+See [scripts/RESET.md](scripts/RESET.md) for more details.

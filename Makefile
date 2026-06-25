@@ -1,4 +1,4 @@
-.PHONY: install setup run ui test lint check-python freeze clean-db
+.PHONY: install setup run ui test lint check-python freeze clean-db reset reset-confirm
 
 VENV        := .venv
 PYTHON      := $(VENV)/bin/python
@@ -68,3 +68,11 @@ clean-db:
 	rm -f data/journal.db
 	rm -rf data/chroma
 	@echo "✅  Database cleared. Run 'make run' to recreate."
+
+# ── Reset commands ────────────────────────────────────────────────────────────
+reset:
+	@echo "⚠️  This will delete ALL user data (journals, embeddings, etc)."
+	@echo "   Run 'make reset-confirm' if you really want to proceed."
+
+reset-confirm:
+	$(PYTHON) scripts/reset.py
