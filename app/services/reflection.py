@@ -3,9 +3,8 @@ from datetime import datetime, timedelta
 from functools import partial
 from statistics import mean
 
-import requests
-
 import aiosqlite
+import requests
 from fastapi import HTTPException
 
 from app.config import settings
@@ -92,10 +91,10 @@ def _call_ollama_sync(prompt: str) -> str:
                 "stream": False,
                 "options": {
                     "temperature": 0.75,
-                    "num_predict": 400,
+                    "num_predict": 300,
                 },
             },
-            timeout=120,
+            timeout=180,
         )
         response.raise_for_status()
         return response.json()["response"]
