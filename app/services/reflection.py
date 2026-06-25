@@ -68,16 +68,13 @@ def build_prompt(
         else "from the past 7 days"
     )
 
-    return f"""You are a warm, empathetic journaling coach writing a reflection for your user.
+    return f"""You are a warm, empathetic journaling coach writing a reflection for your user. Your answer must be a single paragraph.
 
 Here are their journal entries {window_desc}:
 
 {context}{history_block}
 
-Write a personal reflection in 3–4 paragraphs. Use second person ("you felt", "your week").
-Synthesise the entries — do not list them verbatim. Identify the emotional arc across the period.
-Identify recurring emotional patterns. End with one forward-looking observation or gentle encouragement.
-Keep the tone warm, honest, and grounded."""
+"""
 
 
 def _call_ollama_sync(prompt: str, model: str) -> str:
