@@ -1,4 +1,4 @@
-.PHONY: install setup run ui test lint check-python freeze clean-db reset reset-confirm
+.PHONY: install setup run ui test lint check-python freeze clean-db reset reset-confirm seed seed-process
 
 VENV        := .venv
 PYTHON      := $(VENV)/bin/python
@@ -76,3 +76,14 @@ reset:
 
 reset-confirm:
 	$(PYTHON) scripts/reset.py
+
+# ── Seed commands ─────────────────────────────────────────────────────────────
+seed:
+	$(PYTHON) scripts/seed.py
+	@echo ""
+	@echo "💡  Tip: Use 'make seed-process' to also enqueue entries for analysis."
+
+seed-process:
+	$(PYTHON) scripts/seed.py --process
+	@echo ""
+	@echo "✅  Entries seeded and enqueued for processing."

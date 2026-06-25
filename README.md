@@ -149,6 +149,24 @@ make test
 
 ---
 
+## Seeding Sample Data
+
+To quickly populate the database with sample journal entries:
+
+```bash
+# Load 35 sample entries (ready to view immediately)
+make seed
+
+# Or load and enqueue for sentiment analysis
+make seed-process
+```
+
+The default dataset (`data/sample_entries.json`) contains 35 realistic journal entries from a computer science grad student's final year, covering anxiety, high blood pressure, academic stress, and career transitions.
+
+See [scripts/SEED.md](scripts/SEED.md) for details on creating custom datasets.
+
+---
+
 ## Resetting Application Data
 
 To completely wipe all user-generated data (journal entries, embeddings, database), use the reset script:
