@@ -1,0 +1,406 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Request Flow & Layer Interactions — ai.sentiment-tracker</title>
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.5.0/reveal.min.css"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.5.0/theme/dracula.min.css"
+      id="theme"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.5.0/plugin/highlight/monokai.min.css"
+    />
+
+    <style>
+      :root {
+        --r-main-font-size: 18px;
+        --r-heading-text-transform: none;
+        --r-heading1-size: 2.3em;
+        --r-heading2-size: 1.5em;
+        --r-heading3-size: 1.1em;
+      }
+      .reveal pre code {
+        max-height: 400px;
+        font-size: 0.7em;
+        line-height: 1.3em;
+        border-radius: 6px;
+        padding: 12px;
+      }
+      .reveal table {
+        font-size: 0.65em;
+        width: 100%;
+      }
+      .reveal th {
+        color: #ff79c6;
+        border-bottom: 2px solid #6272a4 !important;
+      }
+      .reveal td {
+        border-bottom: 1px solid #44475a !important;
+        padding: 6px 12px;
+      }
+      .highlight-text {
+        color: #ff79c6;
+        font-weight: bold;
+      }
+      .warning-text {
+        color: #ff5555;
+        font-weight: bold;
+      }
+      .success-text {
+        color: #50fa7b;
+        font-weight: bold;
+      }
+      .grid-2 {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 20px;
+        text-align: left;
+      }
+      .mermaid {
+        display: flex;
+        justify-content: center;
+        background: #282a36;
+        padding: 15px;
+        border-radius: 8px;
+        margin-top: 10px;
+      }
+      .mermaid svg {
+        max-height: 380px !important;
+        width: auto !important;
+      }
+      .layer-box {
+        background: #44475a;
+        border-left: 4px solid #ff79c6;
+        padding: 12px;
+        margin: 8px 0;
+        border-radius: 4px;
+        font-size: 0.85em;
+        text-align: left;
+      }
+      .layer-box.api {
+        border-left-color: #50fa7b;
+      }
+      .layer-box.data {
+        border-left-color: #8be9fd;
+      }
+      .layer-box.ai {
+        border-left-color: #f1fa8c;
+      }
+      .code-inline {
+        background: #282a36;
+        padding: 2px 6px;
+        border-radius: 3px;
+        color: #8be9fd;
+        font-family: "Courier New", monospace;
+      }
+      .request-label {
+        background: #6272a4;
+        color: #f8f8f2;
+        padding: 2px 8px;
+        border-radius: 3px;
+        font-weight: bold;
+        font-size: 0.8em;
+        margin-right: 8px;
+      }
+      .step-list {
+        text-align: left;
+        font-size: 0.9em;
+      }
+      .step-list ol {
+        margin-left: 20px;
+      }
+      .step-list li {
+        margin: 8px 0;
+        line-height: 1.4;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="reveal">
+      <div class="slides">
+        <!-- Title Slide -->
+        <section
+          data-background-gradient="linear-gradient(135deg, #282a36 0%, #111217 100%)"
+        >
+          <h1 style="color: #50fa7b">Request Flow & Layer Interactions</h1>
+          <h3 style="color: #8be9fd">
+            ai.sentiment-tracker Architecture Deep Dive
+          </h3>
+          <p style="margin-top: 60px; font-size: 0.9em">
+            API Layer • Data Persistence • AI/ML Processing
+          </p>
+        </section>
+
+        <!-- Overview Slide -->
+        <section>
+          <h2>Three-Layer Request Processing</h2>
+          <div class="layer-box api">
+            <strong>🌐 API Layer (FastAPI)</strong><br />
+            HTTP request handling, validation, routing, response formatting
+          </div>
+          <div class="layer-box data">
+            <strong>💾 Data Persistence (SQLite + ChromaDB)</strong><br />
+            Relational storage, queue management, vector embeddings
+          </div>
+          <div class="layer-box ai">
+            <strong>🤖 AI/ML Layer (Services)</strong><br />
+            Sentiment scoring, embeddings, semantic search, LLM inference
+          </div>
+          <p style="margin-top: 30px; font-size: 0.85em; text-align: left">
+            Each request flows through all three layers in different patterns
+            depending on the endpoint.
+          </p>
+        </section>
+
+        <!-- Example 1: POST /entries - Combined Flow -->
+        <section>
+          <h2>Example 1: POST /entries — Complete Flow</h2>
+          <p style="text-align: left; color: #8be9fd; margin-bottom: 15px">
+            Create a new journal entry (synchronous → asynchronous)
+          </p>
+          <div class="mermaid">
+            sequenceDiagram participant Client as Streamlit UI participant API
+            as FastAPI<br />(create_entry) participant SQLite participant Worker
+            as Background<br />Worker participant Services as ML Services
+            participant ChromaDB Client->>API: POST /entries { content,
+            entry_date } Note over API: Pydantic validation ✓ API->>SQLite:
+            INSERT entries (status='pending') API->>SQLite: INSERT queue
+            (status='pending') API-->>Client: HTTP 202 { id, status: "pending" }
+            Note over Client,API: Returns immediately ⚡ loop Every 2 seconds
+            Worker->>SQLite: claim_next_job() (BEGIN IMMEDIATE) alt Job
+            available SQLite-->>Worker: ✓ Job claimed Worker->>Services:
+            preprocess text Worker->>Services: sentiment (VADER + RoBERTa
+            parallel) Worker->>Services: embeddings (384-dim MiniLM)
+            Services-->>Worker: { scores, embedding } Worker->>SQLite: INSERT
+            analysis (vader, roberta, composite) Worker->>ChromaDB: upsert (id,
+            embedding, metadata) Worker->>SQLite: UPDATE entries SET
+            status='processed' Worker->>SQLite: UPDATE queue SET
+            status='completed' Note over Worker,ChromaDB: Pipeline complete ✓
+            end end Client->>API: GET /entries/{id} (polling every 1.5s) Note
+            over Client,API: Until status='processed'
+          </div>
+          <pre style="margin-top: 20px"><code class="language-json">POST /entries HTTP/1.1
+Content-Type: application/json
+
+{
+  "content": "Today I finally completed that challenging project I've been working on. Feeling accomplished and proud of the results!",
+  "entry_date": "2026-06-24"
+}</code></pre>
+          <pre><code class="language-json">HTTP/1.1 202 Accepted
+Content-Type: application/json
+
+{
+  "id": "entry_abc123",
+  "status": "pending",
+  "created_at": "2026-06-24T14:15:32.456Z"
+}</code></pre>
+        </section>
+
+        <!-- GET /analysis - API & Data Flow -->
+        <section>
+          <h3>GET /entries/{id}/analysis: API → Data Layer</h3>
+          <div class="mermaid">
+            sequenceDiagram participant Client participant FastAPI as FastAPI
+            Handler<br />(get_analysis) participant SQLite Client->>FastAPI: GET
+            /entries/abc123/analysis FastAPI->>SQLite: SELECT * FROM analysis<br />WHERE
+            entry_id = 'abc123' alt Analysis Exists (status=processed)
+            SQLite-->>FastAPI: Row with scores FastAPI->>FastAPI: Map to
+            AnalysisResponse Pydantic model<br />(vader_score, roberta_score,
+            composite_score, label, entities) FastAPI-->>Client: HTTP 200 {
+            scores, label, entities, analysed_at } else Analysis Not Ready
+            (status=pending) SQLite-->>FastAPI: No row (NULL) FastAPI-->>Client:
+            HTTP 404 { detail: "Analysis not yet available" } else Entry Not
+            Found SQLite-->>FastAPI: No row FastAPI-->>Client: HTTP 404 {
+            detail: "Entry not found" } end
+          </div>
+          <pre style="margin-top: 20px"><code class="language-json">GET /entries/entry_abc123/analysis HTTP/1.1
+Accept: application/json</code></pre>
+          <pre><code class="language-json">HTTP/1.1 200 OK
+Content-Type: application/json
+
+{
+  "vader_score": 0.7869,
+  "roberta_score": 0.9521,
+  "composite_score": 0.8695,
+  "label": "POSITIVE",
+  "entities": ["accomplished", "project"],
+  "analysed_at": "2026-06-24T14:32:18.123Z"
+}</code></pre>
+          <p style="text-align: left; font-size: 0.8em; margin-top: 15px">
+            <strong>Scores:</strong> VADER (rule-based) + RoBERTa (transformer) averaged into composite.<br />
+            <strong>Entities:</strong> Extracted during preprocessing (JSON stored in DB).
+          </p>
+        </section>
+
+        <!-- Example 3: POST /chat -->
+        <section>
+          <h2>Example 3: POST /chat</h2>
+          <p style="text-align: left; color: #8be9fd; margin-bottom: 25px">
+            Semantic search + RAG Q&amp;A
+          </p>
+          <pre
+            style="width: 90%; margin: 0 auto"
+          ><code class="language-json">POST /chat
+{
+  "question": "What moods have I experienced recently?"
+}
+
+Response (3–15s):
+{
+  "answer": "Based on your recent entries, you've experienced
+             positive moods around productivity and accomplishment,
+             with sentiment scores 0.85–0.92.",
+  "sources_used": 5
+}</code></pre>
+        </section>
+
+        <!-- POST /chat - Full Flow -->
+        <section>
+          <h3>POST /chat: API → AI → Data → LLM</h3>
+          <div class="mermaid">
+            sequenceDiagram participant Client participant FastAPI as FastAPI<br />(POST
+            /chat) participant Services as Services Layer<br />(embeddings,
+            vector_store, chat) participant SQLite participant ChromaDB
+            participant Ollama as Ollama<br />LLM (:11434) Client->>FastAPI:
+            POST /chat { question } FastAPI->>Services:
+            answer_question(question) Services->>Services:
+            embeddings.embed_text(question)<br />→ 384-dim vector
+            Services->>ChromaDB: semantic_search(vector, k=5)<br />Cosine
+            similarity search ChromaDB-->>Services: [entry_id_1, entry_id_2,
+            ...] Services->>SQLite: get_entries_by_ids(ids)<br />Fetch full text
+            + scores SQLite-->>Services: [{ entry: "...", score: 0.87 }, ...]
+            Services->>Services: Build RAG prompt with context
+            Services->>Ollama: POST inference { prompt, model: "mistral" } alt
+            Ollama Available Ollama-->>Services: Streamed text (read fully)
+            Services-->>FastAPI: { answer, sources_used: 5 } FastAPI-->>Client:
+            HTTP 200 { answer, sources_used } else Ollama Unavailable/Timeout
+            Ollama-->>Services: Connection error / 503 Services-->>FastAPI:
+            HTTPException(503) FastAPI-->>Client: HTTP 503 Service Unavailable
+            end
+          </div>
+        </section>
+
+        <!-- POST /chat - Architecture -->
+        <section>
+          <h3>POST /chat: Three-Layer Architecture</h3>
+          <div class="layer-box api">
+            <strong>API Layer:</strong> Receives question, validates input,
+            calls service, returns JSON response
+          </div>
+          <div class="layer-box data">
+            <strong>Data Persistence:</strong> ChromaDB semantic search finds
+            similar past entries; SQLite fetches full text + mood scores
+          </div>
+          <div class="layer-box ai">
+            <strong>AI/ML Layer:</strong> Embeddings encode the question; LLM
+            (Ollama) generates answer using retrieved context
+          </div>
+          <pre
+            style="margin-top: 20px"
+          ><code class="language-python"># Pseudo-code flow
+1. embedding = SentenceTransformer.encode(question)
+2. similar_ids = ChromaDB.search(embedding, k=5)
+3. context_entries = SQLite.fetch(similar_ids)
+4. prompt = f"Context: {context_entries}\nQuestion: {question}"
+5. answer = Ollama.generate(prompt)
+6. return { "answer": answer, "sources_used": len(context_entries) }</code></pre>
+        </section>
+
+        <!-- POST /chat Response Example -->
+        <section>
+          <h3>POST /chat: Response Example</h3>
+          <pre><code class="language-json">HTTP/1.1 200 OK
+Content-Type: application/json
+
+{
+  "answer": "Based on your recent entries, you've experienced a range of moods.
+             Your most positive entries have been related to completing projects
+             and achieving goals. You mentioned feeling accomplished when finishing
+             work tasks, with sentiment scores around 0.85-0.92.",
+  "sources_used": 5
+}</code></pre>
+          <p style="text-align: left; font-size: 0.8em; margin-top: 15px">
+            Response is generated by the Ollama LLM based on the top-5
+            semantically similar past entries.
+          </p>
+        </section>
+
+        <!-- Example 4: POST /reflect -->
+        <section>
+          <h2>Example 4: POST /reflect</h2>
+          <p style="text-align: left; color: #8be9fd">
+            Generate a weekly reflection using LLM
+          </p>
+          <pre><code class="language">POST /reflect?start=2026-06-17&end=2026-06-24 HTTP/1.1</code></pre>
+          <p style="text-align: left; margin-top: 20px; font-size: 0.85em">
+            Generates a narrative reflection about the mood and themes of a date
+            range by combining<br />
+            aggregated data, similar past entries, and LLM reasoning.
+          </p>
+        </section>
+
+        <!-- Q&A -->
+        <section
+          data-background-gradient="linear-gradient(135deg, #282a36 0%, #111217 100%)"
+        >
+          <h1 style="color: #50fa7b; font-size: 2.8em">
+            Questions &amp; Discussion
+          </h1>
+          <p style="margin-top: 60px; font-size: 1.3em; color: #8be9fd">
+            Ask about request flows, layer interactions, or architecture details
+          </p>
+        </section>
+
+        <!-- Thank You -->
+        <section
+          data-background-gradient="linear-gradient(135deg, #111217 0%, #282a36 100%)"
+        >
+          <h1 style="color: #50fa7b">Thank You</h1>
+          <p style="margin-top: 40px; font-size: 1.1em; color: #f8f8f2">
+            Request Flow & Layer Interactions
+          </p>
+          <p style="margin-top: 60px; font-size: 0.9em; color: #8be9fd">
+            <strong>ai.sentiment-tracker</strong><br />
+            Local-first AI journal architecture
+          </p>
+        </section>
+      </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.5.0/reveal.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.5.0/plugin/highlight/highlight.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+
+    <script>
+      mermaid.initialize({
+        startOnLoad: true,
+        theme: "dark",
+        themeVariables: {
+          background: "#282a36",
+          primaryColor: "#6272a4",
+          lineColor: "#ff79c6",
+          secondaryColor: "#44475a",
+          textColor: "#f8f8f2",
+        },
+      });
+
+      Reveal.initialize({
+        hash: true,
+        controls: true,
+        progress: true,
+        history: true,
+        center: true,
+        slideNumber: "c/t",
+        transition: "slide",
+        plugins: [RevealHighlight],
+      });
+    </script>
+  </body>
+</html>
