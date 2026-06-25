@@ -143,15 +143,18 @@
           <h2>Three-Layer Request Processing</h2>
           <div class="layer-box api">
             <strong>🌐 API Layer (FastAPI)</strong><br />
-            HTTP request handling, validation, routing, response formatting
+            HTTP request handling, validation, routing, response formatting<br />
+            <span style="font-size: 0.9em; color: #8be9fd"><strong>Stack:</strong> FastAPI 0.136 + Uvicorn, Pydantic v2</span>
           </div>
           <div class="layer-box data">
             <strong>💾 Data Persistence (SQLite + ChromaDB)</strong><br />
-            Relational storage, queue management, vector embeddings
+            Relational storage, queue management, vector embeddings<br />
+            <span style="font-size: 0.9em; color: #8be9fd"><strong>Stack:</strong> SQLite + aiosqlite, ChromaDB (HNSW)</span>
           </div>
           <div class="layer-box ai">
             <strong>🤖 AI/ML Layer (Services)</strong><br />
-            Sentiment scoring, embeddings, semantic search, LLM inference
+            Sentiment scoring, embeddings, semantic search, LLM inference<br />
+            <span style="font-size: 0.9em; color: #8be9fd"><strong>Stack:</strong> VADER + RoBERTa, sentence-transformers (MiniLM), Ollama / Mistral</span>
           </div>
           <p style="margin-top: 30px; font-size: 0.85em; text-align: left">
             Each request flows through all three layers in different patterns
